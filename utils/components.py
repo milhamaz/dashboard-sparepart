@@ -420,6 +420,167 @@ def compute_item_d_burn(df_order, df_dprog_lookup):
     return df_matched
 
 
+def merge_lookup_triplet(df_order_final, df_supply_final, df_lookup, lookup_cols, pilih_tahun):
+    """Merge Order (tahun berjalan) & Supply (tahun ini + tahun lalu) dengan 1 lookup master
+    berdasar Partnumber — pola yang dipakai bareng oleh tab TMO/Chemical/TGB/T-OPT, sebelumnya
+    ditulis ulang 3x di tiap file dengan cuma beda nama variabel.
+
+    Return (df_ord, df_sup, df_ly) — masing-masing DataFrame kosong kalau kolom Partnumber
+    tidak ada di sisi order/supply.
+    """
+    lookup = df_lookup[lookup_cols]
+
+    df_ord = pd.merge(df_order_final, lookup, on="Partnumber", how="inner") if "Partnumber" in df_order_final.columns else pd.DataFrame()
+
+    if "Partnumber" in df_supply_final.columns:
+        df_sup = pd.merge(df_supply_final[df_supply_final["Tahun"] == pilih_tahun], lookup, on="Partnumber", how="inner")
+        df_ly = pd.merge(df_supply_final[df_supply_final["Tahun"] == pilih_tahun - 1], lookup, on="Partnumber", how="inner")
+    else:
+        df_sup, df_ly = pd.DataFrame(), pd.DataFrame()
+
+    return df_ord, df_sup, df_ly
+
+
+def aggregate_monthly(df, value_col, out_col=None):
+    """Groupby Bulan_Num/Bulan, sum `value_col`, di-rename ke `out_col` kalau beda nama.
+    Aman untuk df kosong (return DataFrame kosong dengan kolom yang tetap konsisten)."""
+    out_col = out_col or value_col
+    if df.empty:
+        return pd.DataFrame(columns=["Bulan_Num", "Bulan", out_col])
+    result = df.groupby(["Bulan_Num", "Bulan"])[value_col].sum().reset_index()
+    if out_col != value_col:
+        result = result.rename(columns={value_col: out_col})
+    return result
+
+
+def render_trend_cards(m_ly, m_ord, m_sup, pilih_tahun, card_titles, fmt_card):
+    """Render 4 card standar (Order, Supply, Last Year, Growth) dari hasil aggregate_monthly().
+
+    m_ly/m_ord/m_sup: masing2 punya kolom value "Last_Year"/"Order"/"Actual".
+    card_titles: dict {"order","supply","ly","growth"} buat title tiap card.
+    Return (total_order, total_supply, total_ly) biar tab pemanggil bisa pakai buat
+    card tambahan (mis. split SO Campaign di TMO) tanpa hitung ulang.
+    """
+    total_order = m_ord["Order"].sum() if not m_ord.empty else 0
+    total_supply = m_sup["Actual"].sum() if not m_sup.empty else 0
+    total_ly = m_ly["Last_Year"].sum() if not m_ly.empty else 0
+    growth = hitung_growth(total_supply, total_ly)
+    avg_order = hitung_avg(total_order, m_ord, "Order")
+    avg_supply = hitung_avg(total_supply, m_sup, "Actual")
+
+    c1, c2, c3, c4 = st.columns(4)
+    with c1: st.markdown(render_card("", card_titles["order"], fmt_card(total_order), f"Avg: {fmt_card(avg_order)}/bln"), unsafe_allow_html=True)
+    with c2: st.markdown(render_card("", card_titles["supply"], fmt_card(total_supply), f"Avg: {fmt_card(avg_supply)}/bln"), unsafe_allow_html=True)
+    with c3: st.markdown(render_card("", card_titles["ly"], fmt_card(total_ly), f"Tahun {pilih_tahun - 1}"), unsafe_allow_html=True)
+    with c4: st.markdown(render_growth_card("", card_titles.get("growth", "Growth"), growth, f"Supply vs {pilih_tahun - 1}"), unsafe_allow_html=True)
+
+    return total_order, total_supply, total_ly
+
+
+def render_trend_chart_and_table(m_ly, m_ord, m_sup, pilih_tahun, pilih_bulan, hover_fmt, text_fmt, yaxis_title, detail_labels, highlight_pct, text_size=14):
+    """Render bar chart 3-series (LY/Order/Supply) + expander detail tabel bulanan dengan
+    A/LY% — pola yang sama dipakai TMO/Chemical/TGB/T-OPT, cuma beda label & formatter.
+
+    detail_labels perlu key: expander_title, ly, order, supply, cell_fmt, no_data.
+    """
+    ly_vals = [m_ly[m_ly["Bulan"] == b]["Last_Year"].values[0] if len(m_ly[m_ly["Bulan"] == b]) else 0 for b in pilih_bulan]
+    ord_vals = [m_ord[m_ord["Bulan"] == b]["Order"].values[0] if len(m_ord[m_ord["Bulan"] == b]) else 0 for b in pilih_bulan]
+    sup_vals = [m_sup[m_sup["Bulan"] == b]["Actual"].values[0] if len(m_sup[m_sup["Bulan"] == b]) else 0 for b in pilih_bulan]
+
+    fig = render_bar_chart(
+        pilih_bulan,
+        [
+            {"values": ly_vals, "name": f"Last Year ({pilih_tahun - 1})", "color": "#e11d48", "hover_fmt": hover_fmt, "text_fmt": text_fmt, "text_size": text_size},
+            {"values": ord_vals, "name": "Order", "color": "#2563eb", "hover_fmt": hover_fmt, "text_fmt": text_fmt, "text_size": text_size},
+            {"values": sup_vals, "name": "Supply", "color": "#10b981", "hover_fmt": hover_fmt, "text_fmt": text_fmt, "text_size": text_size},
+        ],
+        yaxis_title=yaxis_title, height=580,
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    with st.expander(detail_labels.get("expander_title", "Detail Data")):
+        if not m_ord.empty or not m_sup.empty or not m_ly.empty:
+            detail = m_ly.merge(m_ord, on=["Bulan_Num", "Bulan"], how="outer").merge(m_sup, on=["Bulan_Num", "Bulan"], how="outer").fillna(0)
+            detail["Bulan_Num"] = detail["Bulan_Num"].astype(int)
+            detail = detail[detail["Bulan"].isin(pilih_bulan)].sort_values("Bulan_Num")
+            detail = trim_future_months(detail, data_cols=["Order", "Actual"])
+            detail["A/LY (%)"] = detail.apply(lambda row: hitung_aly(row["Actual"], row["Last_Year"]), axis=1)
+
+            display = detail.drop(columns=["Bulan_Num"]).rename(columns={
+                "Last_Year": detail_labels["ly"], "Order": detail_labels["order"], "Actual": detail_labels["supply"],
+            })
+
+            ly_sum = display[detail_labels["ly"]].sum()
+            ord_sum = display[detail_labels["order"]].sum()
+            sup_sum = display[detail_labels["supply"]].sum()
+            display = append_total_row(display, {
+                "Bulan": "TOTAL",
+                detail_labels["ly"]: ly_sum,
+                detail_labels["order"]: ord_sum,
+                detail_labels["supply"]: sup_sum,
+                "A/LY (%)": hitung_aly(sup_sum, ly_sum),
+            })
+
+            cell_fmt = detail_labels["cell_fmt"]
+            render_styled_table(
+                display, highlight_pct, pct_cols=["A/LY (%)"],
+                fmt_dict={detail_labels["ly"]: cell_fmt, detail_labels["order"]: cell_fmt, detail_labels["supply"]: cell_fmt, "A/LY (%)": "{:.2f}%"},
+                has_total_row=True,
+            )
+        else:
+            st.info(detail_labels.get("no_data", "Tidak ada data untuk filter yang dipilih."))
+
+
+def render_value_breakdown(df, value_col, key_prefix, fmt_cell=None):
+    """Breakdown 1 value_col (Volume/Order/Qty) per Cabang atau Customer, dalam SATU
+    pivot table yang bisa switch dimensi + filter Area + search box (mode Per Customer).
+
+    `df` harus dataframe yang sudah difilter kategori/jenis oleh tab pemanggil (Order-side),
+    dan minimal punya kolom: Cabang, Kode_Area, Customer_No, Customer_Name, Bulan, Bulan_Num.
+    fmt_cell: formatter angka di sel tabel (default ribuan biasa, bisa diisi fmt_rp/fmt_liter dst).
+    """
+    if df is None or df.empty:
+        st.info("Tidak ada data untuk breakdown.")
+        return
+
+    fmt_cell = fmt_cell or (lambda x: f"{x:,.0f}".replace(",", "."))
+
+    col1, col2 = st.columns(2)
+    with col1:
+        subj_dim = st.selectbox("Breakdown per", ["Cabang", "Customer"], key=f"breakdown_dim_{key_prefix}")
+    with col2:
+        area_options = sorted(df["Kode_Area"].dropna().unique().tolist()) if "Kode_Area" in df.columns else []
+        area_key = f"breakdown_area_{key_prefix}"
+        cleanup_selection(area_key, area_options)
+        pilih_area = st.multiselect("Filter Area", area_options, key=area_key, placeholder="Semua (klik untuk filter)")
+
+    df_scope = df[df["Kode_Area"].isin(pilih_area)] if pilih_area else df
+
+    if subj_dim == "Cabang":
+        subj_col = "Cabang"
+    else:
+        df_scope = df_scope.copy()
+        df_scope["Customer_Label"] = df_scope["Customer_No"].astype(str) + " - " + df_scope["Customer_Name"].astype(str).str.strip().str.upper()
+        subj_col = "Customer_Label"
+        search_kw = st.text_input("Cari Customer (nama/kode)", key=f"breakdown_search_{key_prefix}")
+        if search_kw.strip():
+            df_scope = df_scope[df_scope[subj_col].str.contains(search_kw.strip(), case=False, na=False)]
+
+    if df_scope.empty:
+        st.info("Tidak ada data untuk kombinasi filter/pencarian ini.")
+        return
+
+    pivot = build_pivot(df_scope, subj_col, "Bulan", list_bulan_standar, value_col, "sum")
+    styled = pivot.style.format(fmt_cell).set_properties(
+        **{'text-align': 'right', 'font-size': '13px'}
+    ).set_properties(
+        subset=pd.IndexSlice[:, "TOTAL"], **{'font-weight': 'bold', 'background-color': 'rgba(245, 158, 11, 0.08)'}
+    ).set_properties(
+        subset=pd.IndexSlice["TOTAL", :], **TOTAL_ROW_STYLE
+    )
+    st.dataframe(styled, use_container_width=True, height=min(auto_table_height(len(pivot)), 600))
+
+
 def validate_lookup(df, required_cols, file_label):
     """Cek data master lookup sudah siap (tidak kosong & semua kolom wajib ada).
 
