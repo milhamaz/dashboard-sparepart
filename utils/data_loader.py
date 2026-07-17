@@ -1,0 +1,213 @@
+# ============================================================
+# 📦 DATA LOADER — Semua config path & fungsi load data
+# ============================================================
+import streamlit as st
+import pandas as pd
+from pathlib import Path
+import os
+
+# Base directory — bisa di-override via environment variable
+BASE_DIR = Path(os.getenv("DASHBOARD_DATA_DIR", r"D:\Dashboard\TASTI"))
+
+kamus_bulan = {
+    "January": "Januari", "February": "Februari", "March": "Maret",
+    "April": "April", "May": "Mei", "June": "Juni",
+    "July": "Juli", "August": "Agustus", "September": "September",
+    "October": "Oktober", "November": "November", "December": "Desember"
+}
+
+list_bulan_standar = [
+    "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+    "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+]
+
+ORDER_DIR = BASE_DIR / "Order"
+ORDER_SKIP_COLS = [
+    "Partname", "Discount", "Item_Disc", "Sales_Net",
+    "DPP", "PPN", "Total_Amount", "Group_Part", "Group_Part_Desc",
+    "No_PO_Customer", "SO_Status", "Qty_Invoice", 
+    "Status_Invoice", "Time_to_TPOS", "Status_SO", "Stop_Sales",
+]
+
+SUPPLY_DIR = BASE_DIR / "Supply"
+SUPPLY_SKIP_COLS = [
+    "Partname", "Discount", "Item_Disc", "Scp_Disc", "Sales_Net",
+    "DPP", "PPN", "Total_Amount", "Group_Part", "Group_Part_Desc",
+    "No_PO_Customer", "Item_Disc_Desc", "Base_Disc", "No_Faktur_Pajak",
+    "Due_Date", "Performa_Invoice", "Cust_NPWP", "Nomor_DA",
+]
+
+CUSTOMER_FILE = BASE_DIR / "Customer.xlsx"
+CUSTOMER_COLS = ["Kode_Customer", "Jenis_Customer", "Kelas_Customer", "Cabang", "Kode_Area"]
+
+TARGET_FILE = BASE_DIR / "Tgt_Cabang.xlsx"
+TARGET_COLS = ["Tahun", "Bulan_Num", "Bulan", "Code_Cabang", "Cabang", "Target"]
+
+KALKERJA_FILE = BASE_DIR / "Kal_Kerja.xlsx"
+KALKERJA_COLS = ["Tahun", "Bulan", "Bulan_Num", "Hari_Kerja"]
+
+TMO_FILE = BASE_DIR / "PnoTMO.xlsx"
+TOPT_FILE = BASE_DIR / "PnoTOPT.xlsx"
+CHEM_FILE = BASE_DIR / "PnoChem.xlsx"
+BATTERY_FILE = BASE_DIR / "PnoTGB.xlsx"
+KP7_FILE = BASE_DIR / "Pno7KP.xlsx"
+KP7_PREFIX_FILE = BASE_DIR / "Pno7KP_Prefix.xlsx"
+DPROG_FILE = BASE_DIR / "PnoDProg.xlsx"
+
+_MASTER_FILES = [CUSTOMER_FILE, TARGET_FILE, KALKERJA_FILE, TMO_FILE, TOPT_FILE, CHEM_FILE, BATTERY_FILE, KP7_FILE, KP7_PREFIX_FILE, DPROG_FILE]
+
+
+def compute_data_fingerprint():
+    """Fingerprint dari mtime seluruh file sumber data (CSV Order/Supply + Excel master).
+
+    st.cache_data hanya menghash berdasarkan bytecode fungsi + argumennya, bukan isi file
+    yang dibaca di dalamnya — jadi kalau file di TASTI/ diupdate, cache lama tetap terpakai
+    sampai proses Streamlit di-restart manual. Dengan meneruskan fingerprint ini sebagai
+    argumen ke load_and_process_data(), cache otomatis invalidasi begitu ada file yang
+    berubah/baru, tanpa reload percuma kalau tidak ada perubahan sama sekali.
+    """
+    stamps = [f"{p.name}:{p.stat().st_mtime}" for p in _MASTER_FILES if p.exists()]
+    for directory in (ORDER_DIR, SUPPLY_DIR):
+        if directory.exists():
+            stamps += [f"{f.name}:{f.stat().st_mtime}" for f in sorted(directory.glob("*.csv"))]
+    return "|".join(stamps)
+
+
+@st.cache_data
+def load_and_process_data(fingerprint):
+    def load_csvs(directory, prefix, min_year, skip_cols=None):
+        dfs = []
+        for file in sorted(directory.glob(f"{prefix}*.csv")):
+            tahun = int(file.stem[1:3]) + 2000
+            if tahun < min_year: continue
+            try:
+                df = pd.read_csv(file, low_memory=False, encoding="utf-8")
+            except UnicodeDecodeError:
+                df = pd.read_csv(file, low_memory=False, encoding="latin-1")
+            df.columns = df.columns.str.strip().str.replace(" ", "_")
+            if skip_cols:
+                df = df.drop(columns=[c for c in skip_cols if c in df.columns])
+            dfs.append(df)
+        return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+
+    df_order = load_csvs(ORDER_DIR, "O", 2024, skip_cols=ORDER_SKIP_COLS)
+    df_supply = load_csvs(SUPPLY_DIR, "S", 2023, skip_cols=SUPPLY_SKIP_COLS)
+
+    df_customer = pd.read_excel(CUSTOMER_FILE, engine="openpyxl")
+    df_customer.columns = df_customer.columns.str.strip().str.replace(" ", "_")
+    df_customer = df_customer[CUSTOMER_COLS]
+    df_customer["Kode_Customer"] = df_customer["Kode_Customer"].astype(str).str.upper().str.strip()
+
+    df_target = pd.read_excel(TARGET_FILE, engine="openpyxl")
+    df_target.columns = df_target.columns.str.strip().str.replace(" ", "_")
+    df_target = df_target[TARGET_COLS]
+
+    clean_cols = lambda df: df.columns.str.strip().str.replace(r'\s+', '_', regex=True)
+
+    # ── Load Master Data Lookup ──
+    df_tmo_lookup = pd.read_excel(TMO_FILE, engine="openpyxl")
+    df_tmo_lookup.columns = clean_cols(df_tmo_lookup)
+
+    df_topt_lookup = pd.read_excel(TOPT_FILE, engine="openpyxl")
+    df_topt_lookup.columns = clean_cols(df_topt_lookup)
+
+    df_chem_lookup = pd.read_excel(CHEM_FILE, engine="openpyxl")
+    df_chem_lookup.columns = clean_cols(df_chem_lookup)
+
+    df_tgb_lookup = pd.read_excel(BATTERY_FILE, engine="openpyxl")
+    df_tgb_lookup.columns = clean_cols(df_tgb_lookup)
+
+    # 🔄 [FIX 1-4] Loop untuk upper & strip Partnumber pada Master Data
+    for df_master in [df_tmo_lookup, df_topt_lookup, df_chem_lookup, df_tgb_lookup]:
+        df_master["Partnumber"] = df_master["Partnumber"].astype(str).str.upper().str.strip()
+
+    df_order["Customer_No"] = df_order["Customer_No"].astype(str).str.upper().str.strip()
+    df_order = pd.merge(df_order, df_customer, left_on="Customer_No", right_on="Kode_Customer", how="left").drop(columns=["Kode_Customer"])
+
+    df_supply["Customer_No"] = df_supply["Customer_No"].astype(str).str.upper().str.strip()
+    df_supply = pd.merge(df_supply, df_customer, left_on="Customer_No", right_on="Kode_Customer", how="left").drop(columns=["Kode_Customer"])
+
+    # Olah Tanggal & Konversi ke Bahasa Indonesia
+    df_order["SO_Date"] = pd.to_datetime(df_order["SO_Date"], dayfirst=True, errors="coerce")
+    df_order = df_order.dropna(subset=["SO_Date"])
+    df_order["Tahun"] = df_order["SO_Date"].dt.year
+    df_order["Bulan_Num"] = df_order["SO_Date"].dt.month
+    df_order["Bulan"] = df_order["SO_Date"].dt.strftime("%B").map(kamus_bulan).str.strip()
+    df_order["Order"] = (df_order["Qty"] * df_order["Retail_Price"]) / 1.11
+
+    df_supply["Invoice_Date"] = pd.to_datetime(df_supply["Invoice_Date"], dayfirst=True, errors="coerce")
+    df_supply = df_supply.dropna(subset=["Invoice_Date"])
+    df_supply["Tahun"] = df_supply["Invoice_Date"].dt.year
+    df_supply["Bulan_Num"] = df_supply["Invoice_Date"].dt.month
+    df_supply["Bulan"] = df_supply["Invoice_Date"].dt.strftime("%B").map(kamus_bulan).str.strip()
+    df_supply["Actual"] = (df_supply["Qty"] * df_supply["Retail_Price"]) / 1.11
+
+    df_target["Bulan"] = df_target["Bulan"].astype(str).str.strip().str.capitalize().map(kamus_bulan).fillna(df_target["Bulan"]).str.strip()
+
+    df_kalkerja = pd.read_excel(KALKERJA_FILE, engine="openpyxl")
+    df_kalkerja.columns = df_kalkerja.columns.str.strip().str.replace(" ", "_")
+    df_kalkerja = df_kalkerja[KALKERJA_COLS]
+    df_kalkerja["Tahun"] = df_kalkerja["Tahun"].astype(int)
+    df_kalkerja["Bulan_Num"] = df_kalkerja["Bulan_Num"].astype(int)
+    df_kalkerja["Hari_Kerja"] = df_kalkerja["Hari_Kerja"].astype(float)
+
+    df_order = pd.merge(df_order, df_target, on=["Tahun", "Bulan_Num", "Bulan", "Cabang"], how="left")
+    df_supply = pd.merge(df_supply, df_target, on=["Tahun", "Bulan_Num", "Bulan", "Cabang"], how="left")
+
+    for df in [df_order, df_supply]:
+        if "SO_Type" not in df.columns:
+            df["SO_Type"] = None
+        df["SO_Type"] = df["SO_Type"].astype(str).str.strip().replace(["nan", "None", ""], None)
+        
+        if "Campaign_Code" in df.columns:
+            mask_blank = df["SO_Type"].isna()
+            mask_has_camp = df["Campaign_Code"].notna() & (df["Campaign_Code"].astype(str).str.strip() != "")
+            df.loc[mask_blank & mask_has_camp, "SO_Type"] = "C"
+            df.loc[mask_blank & ~mask_has_camp, "SO_Type"] = "3"
+        else:
+            df["SO_Type"] = df["SO_Type"].fillna("3")
+
+    def find_pno_col(df):
+        for col in ["Partnumber", "Part_No", "Part_Number", "PartNumber"]:
+            if col in df.columns: return col
+        return None
+
+    pno_col_order, pno_col_supply = find_pno_col(df_order), find_pno_col(df_supply)
+    if pno_col_order and pno_col_order != "Partnumber": df_order = df_order.rename(columns={pno_col_order: "Partnumber"})
+    if pno_col_supply and pno_col_supply != "Partnumber": df_supply = df_supply.rename(columns={pno_col_supply: "Partnumber"})
+    
+    # 🔄 [FIX 5-6] Loop untuk upper & strip Partnumber pada Data Transaksi (Order & Supply)
+    for df in [df_order, df_supply]:
+        if "Partnumber" in df.columns: 
+            df["Partnumber"] = df["Partnumber"].astype(str).str.upper().str.strip()
+
+    # Ensure Scp_Disc column exists and is numeric (for Item D burn calculation)
+    if "Scp_Disc" in df_order.columns:
+        df_order["Scp_Disc"] = pd.to_numeric(df_order["Scp_Disc"], errors="coerce").fillna(0).astype(int)
+    else:
+        df_order["Scp_Disc"] = 0
+
+    # ── 7KP Master ──
+    df_7kp_lookup = pd.read_excel(KP7_FILE, engine="openpyxl")
+    df_7kp_lookup.columns = clean_cols(df_7kp_lookup)
+    # 🔄 [FIX 7] Upper & strip untuk master 7KP
+    df_7kp_lookup["Partnumber"] = df_7kp_lookup["Partnumber"].astype(str).str.upper().str.strip()
+    if "Grup_Part" in df_7kp_lookup.columns:
+        df_7kp_lookup.rename(columns={"Grup_Part": "Grup_Part_7KP"}, inplace=True)
+
+    # ── 7KP Prefix Rules (buat tebak partnumber substitusi yang belum diregister) ──
+    # dtype=str eksplisit di read_excel — tanpa ini pandas diam-diam infer kolom Prefix
+    # jadi angka dan leading zero (mis. "04465") hilang, walau cell aslinya sudah format Text.
+    df_7kp_prefix = pd.read_excel(KP7_PREFIX_FILE, engine="openpyxl", dtype={"Prefix": str})
+    df_7kp_prefix.columns = clean_cols(df_7kp_prefix)
+    df_7kp_prefix["Prefix"] = df_7kp_prefix["Prefix"].str.strip()
+
+    # ── DProg Master (Item D) ──
+    df_dprog_lookup = pd.read_excel(DPROG_FILE, engine="openpyxl")
+    df_dprog_lookup.columns = clean_cols(df_dprog_lookup)
+    # 🔄 [FIX 8] Upper & strip untuk master DProg
+    df_dprog_lookup["Partnumber"] = df_dprog_lookup["Partnumber"].astype(str).str.upper().str.strip()
+    df_dprog_lookup["StartDate"] = pd.to_datetime(df_dprog_lookup["StartDate"], errors="coerce")
+    df_dprog_lookup["EndDate"] = pd.to_datetime(df_dprog_lookup["EndDate"], errors="coerce")
+
+    return df_order, df_supply, df_target, df_tmo_lookup, df_topt_lookup, df_chem_lookup, df_tgb_lookup, df_7kp_lookup, df_dprog_lookup, df_kalkerja, df_7kp_prefix

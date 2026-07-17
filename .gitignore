@@ -1,0 +1,5 @@
+TASTI/
+__pycache__/
+*.pyc
+.streamlit/
+.claude/
