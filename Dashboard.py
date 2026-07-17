@@ -28,6 +28,7 @@ with col1:
     - **Chemical** — Revenue produk chemical
     - **TGB** — Quantity baterai (Pcs)
     - **T-OPT** — Revenue T-Genuine Optima Parts
+    - **COGS & Profit** — Estimasi profit nasional/cabang/salesman/customer
     """)
 
 with col2:

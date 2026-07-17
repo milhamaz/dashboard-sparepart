@@ -3,6 +3,7 @@
 # ============================================================
 import streamlit as st
 import pandas as pd
+import numpy as np
 from pathlib import Path
 import os
 
@@ -31,7 +32,7 @@ ORDER_SKIP_COLS = [
 
 SUPPLY_DIR = BASE_DIR / "Supply"
 SUPPLY_SKIP_COLS = [
-    "Partname", "Discount", "Item_Disc", "Scp_Disc", "Sales_Net",
+    "Partname", "Item_Disc", "Scp_Disc", "Sales_Net",
     "DPP", "PPN", "Total_Amount", "Group_Part", "Group_Part_Desc",
     "No_PO_Customer", "Item_Disc_Desc", "Base_Disc", "No_Faktur_Pajak",
     "Due_Date", "Performa_Invoice", "Cust_NPWP", "Nomor_DA",
@@ -53,8 +54,20 @@ BATTERY_FILE = BASE_DIR / "PnoTGB.xlsx"
 KP7_FILE = BASE_DIR / "Pno7KP.xlsx"
 KP7_PREFIX_FILE = BASE_DIR / "Pno7KP_Prefix.xlsx"
 DPROG_FILE = BASE_DIR / "PnoDProg.xlsx"
+KELAS_CABANG_FILE = BASE_DIR / "Kelas_Cabang.xlsx"
 
-_MASTER_FILES = [CUSTOMER_FILE, TARGET_FILE, KALKERJA_FILE, TMO_FILE, TOPT_FILE, CHEM_FILE, BATTERY_FILE, KP7_FILE, KP7_PREFIX_FILE, DPROG_FILE]
+_MASTER_FILES = [CUSTOMER_FILE, TARGET_FILE, KALKERJA_FILE, TMO_FILE, TOPT_FILE, CHEM_FILE, BATTERY_FILE, KP7_FILE, KP7_PREFIX_FILE, DPROG_FILE, KELAS_CABANG_FILE]
+
+# ── Estimasi COGS/Profit (data pembelian TASTI-ke-Toyota ga praktis ditarik bulk) ──
+TMO_PREFIX = "08880"
+TOYOTA_DISCOUNT_TMO = 44.0  # % diskon Toyota->TASTI buat kategori TMO, fixed & diketahui
+
+# Margin (persen poin, selisih diskon Toyota-ke-TASTI vs TASTI-ke-customer) per Kelas Cabang
+KELAS_MARGIN_RANGE = {
+    "A": (7.3, 7.7), "B": (7.5, 7.9), "C": (7.8, 8.3), "D": (8.0, 8.5), "E": (8.3, 9.0),
+}
+# Cabang dengan rule margin sendiri (di luar sistem Kelas A-E)
+CABANG_MARGIN_RANGE = {"JAKARTA": (6.5, 7.1), "MEDAN": (6.8, 7.3)}
 
 
 def compute_data_fingerprint():
@@ -209,5 +222,40 @@ def load_and_process_data(fingerprint):
     df_dprog_lookup["Partnumber"] = df_dprog_lookup["Partnumber"].astype(str).str.upper().str.strip()
     df_dprog_lookup["StartDate"] = pd.to_datetime(df_dprog_lookup["StartDate"], errors="coerce")
     df_dprog_lookup["EndDate"] = pd.to_datetime(df_dprog_lookup["EndDate"], errors="coerce")
+
+    # ── Kelas Cabang (buat estimasi margin COGS — generated dari ranking revenue 2025,
+    # exclude Jakarta & Medan yang punya rule margin sendiri) ──
+    df_kelas_cabang = pd.read_excel(KELAS_CABANG_FILE, engine="openpyxl")
+    df_kelas_cabang.columns = clean_cols(df_kelas_cabang)
+
+    # ── Estimasi COGS & Profit ──
+    # Data pembelian TASTI-ke-Toyota (Modal asli) ga bisa ditarik bulk (limit 10 hari/tarik),
+    # jadi di-estimasi: Net Sales pakai kolom Discount asli (diskon TASTI->customer), COGS
+    # pakai simulasi diskon Toyota->TASTI (TMO = fixed 44%; selain itu = Discount asli +
+    # random margin sesuai Cabang/Kelas). Profit = Net Sales - COGS, bisa minus kalau
+    # TASTI ngasih diskon customer lebih gede dari yang didapat dari Toyota (umum di TMO).
+    margin_rows = [{"Cabang": c, "Margin_Low": lo, "Margin_High": hi} for c, (lo, hi) in CABANG_MARGIN_RANGE.items()]
+    for _, r in df_kelas_cabang.iterrows():
+        lo, hi = KELAS_MARGIN_RANGE.get(r["Kelas"], (7.3, 8.7))
+        margin_rows.append({"Cabang": r["Cabang"], "Margin_Low": lo, "Margin_High": hi})
+    df_margin_range = pd.DataFrame(margin_rows)
+
+    df_supply = df_supply.merge(df_margin_range, on="Cabang", how="left")
+    df_supply["Margin_Low"] = df_supply["Margin_Low"].fillna(7.3)
+    df_supply["Margin_High"] = df_supply["Margin_High"].fillna(8.7)
+
+    df_supply["Discount"] = pd.to_numeric(df_supply["Discount"], errors="coerce").fillna(0)
+    df_supply["Net_Sales"] = df_supply["Qty"] * df_supply["Retail_Price"] * (1 - df_supply["Discount"] / 100) / 1.11
+
+    is_tmo = df_supply["Partnumber"].astype(str).str.startswith(TMO_PREFIX)
+    rng = np.random.default_rng(42)  # seed tetap biar angka profit stabil antar reload/rerun
+    random_margin = rng.uniform(df_supply["Margin_Low"].to_numpy(), df_supply["Margin_High"].to_numpy())
+    df_supply["Simulated_Toyota_Discount"] = np.where(is_tmo, TOYOTA_DISCOUNT_TMO, df_supply["Discount"].to_numpy() + random_margin)
+
+    df_supply["COGS"] = df_supply["Qty"] * df_supply["Retail_Price"] * (1 - df_supply["Simulated_Toyota_Discount"] / 100) / 1.11
+    df_supply["Profit"] = df_supply["Net_Sales"] - df_supply["COGS"]
+    df_supply["Pct_Profit"] = np.where(df_supply["Actual"] != 0, df_supply["Profit"] / df_supply["Actual"] * 100, 0)
+    df_supply["Pct_Profit_Margin"] = np.where(df_supply["Net_Sales"] != 0, df_supply["Profit"] / df_supply["Net_Sales"] * 100, 0)
+    df_supply = df_supply.drop(columns=["Margin_Low", "Margin_High"])
 
     return df_order, df_supply, df_target, df_tmo_lookup, df_topt_lookup, df_chem_lookup, df_tgb_lookup, df_7kp_lookup, df_dprog_lookup, df_kalkerja, df_7kp_prefix

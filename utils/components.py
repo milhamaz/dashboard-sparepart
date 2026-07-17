@@ -531,23 +531,26 @@ def render_trend_chart_and_table(m_ly, m_ord, m_sup, pilih_tahun, pilih_bulan, h
             st.info(detail_labels.get("no_data", "Tidak ada data untuk filter yang dipilih."))
 
 
-def render_value_breakdown(df, value_col, key_prefix, fmt_cell=None):
-    """Breakdown 1 value_col (Volume/Order/Qty) per Cabang atau Customer, dalam SATU
-    pivot table yang bisa switch dimensi + filter Area + search box (mode Per Customer).
+def render_value_breakdown(df, value_col, key_prefix, fmt_cell=None, subj_options=None):
+    """Breakdown 1 value_col (Volume/Order/Qty/Profit) per Cabang/Customer/Salesman, dalam
+    SATU pivot table yang bisa switch dimensi + filter Area + search box (mode Customer/Salesman).
 
-    `df` harus dataframe yang sudah difilter kategori/jenis oleh tab pemanggil (Order-side),
-    dan minimal punya kolom: Cabang, Kode_Area, Customer_No, Customer_Name, Bulan, Bulan_Num.
+    `df` harus dataframe yang sudah difilter kategori/jenis oleh tab pemanggil, dan minimal
+    punya kolom: Cabang, Kode_Area, Bulan, Bulan_Num, plus Customer_No/Customer_Name (mode
+    Customer) atau Salesman_Name (mode Salesman) sesuai subj_options yang dipakai.
     fmt_cell: formatter angka di sel tabel (default ribuan biasa, bisa diisi fmt_rp/fmt_liter dst).
+    subj_options: daftar dimensi yang bisa dipilih (default ["Cabang", "Customer"]).
     """
     if df is None or df.empty:
         st.info("Tidak ada data untuk breakdown.")
         return
 
     fmt_cell = fmt_cell or (lambda x: f"{x:,.0f}".replace(",", "."))
+    subj_options = subj_options or ["Cabang", "Customer"]
 
     col1, col2 = st.columns(2)
     with col1:
-        subj_dim = st.selectbox("Breakdown per", ["Cabang", "Customer"], key=f"breakdown_dim_{key_prefix}")
+        subj_dim = st.selectbox("Breakdown per", subj_options, key=f"breakdown_dim_{key_prefix}")
     with col2:
         area_options = sorted(df["Kode_Area"].dropna().unique().tolist()) if "Kode_Area" in df.columns else []
         area_key = f"breakdown_area_{key_prefix}"
@@ -558,6 +561,13 @@ def render_value_breakdown(df, value_col, key_prefix, fmt_cell=None):
 
     if subj_dim == "Cabang":
         subj_col = "Cabang"
+    elif subj_dim == "Salesman":
+        df_scope = df_scope.copy()
+        df_scope["Salesman_Label"] = df_scope["Salesman_Name"].astype(str).str.strip().str.upper()
+        subj_col = "Salesman_Label"
+        search_kw = st.text_input("Cari Salesman", key=f"breakdown_search_{key_prefix}")
+        if search_kw.strip():
+            df_scope = df_scope[df_scope[subj_col].str.contains(search_kw.strip(), case=False, na=False)]
     else:
         df_scope = df_scope.copy()
         df_scope["Customer_Label"] = df_scope["Customer_No"].astype(str) + " - " + df_scope["Customer_Name"].astype(str).str.strip().str.upper()
