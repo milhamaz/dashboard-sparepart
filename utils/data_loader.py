@@ -97,26 +97,41 @@ def compute_data_fingerprint():
     return "|".join(stamps)
 
 
-@st.cache_data
-def load_and_process_data(fingerprint):
-    def load_csvs(directory, prefix, min_year, skip_cols=None):
-        dfs = []
-        for file in sorted(directory.glob(f"{prefix}*.csv")):
-            tahun = int(file.stem[1:3]) + 2000
-            if tahun < min_year: continue
-            try:
-                df = pd.read_csv(file, low_memory=False, encoding="utf-8")
-            except UnicodeDecodeError:
-                df = pd.read_csv(file, low_memory=False, encoding="latin-1")
-            df.columns = df.columns.str.strip().str.replace(" ", "_")
-            if skip_cols:
-                df = df.drop(columns=[c for c in skip_cols if c in df.columns])
-            dfs.append(df)
-        return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+def _load_csvs(directory, prefix, min_year, skip_cols=None):
+    dfs = []
+    for file in sorted(directory.glob(f"{prefix}*.csv")):
+        tahun = int(file.stem[1:3]) + 2000
+        if tahun < min_year: continue
+        try:
+            df = pd.read_csv(file, low_memory=False, encoding="utf-8")
+        except UnicodeDecodeError:
+            df = pd.read_csv(file, low_memory=False, encoding="latin-1")
+        df.columns = df.columns.str.strip().str.replace(" ", "_")
+        if skip_cols:
+            df = df.drop(columns=[c for c in skip_cols if c in df.columns])
+        dfs.append(df)
+    return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
-    df_order = load_csvs(ORDER_DIR, "O", 2024, skip_cols=ORDER_SKIP_COLS)
-    df_supply = load_csvs(SUPPLY_DIR, "S", 2023, skip_cols=SUPPLY_SKIP_COLS)
 
+_clean_cols = lambda df: df.columns.str.strip().str.replace(r'\s+', '_', regex=True)
+
+
+@st.cache_data(show_spinner=False)
+def _load_raw_csvs(fingerprint):
+    """Load & concat CSV Order/Supply mentah — tahap terberat (I/O banyak file), makanya
+    dipisah cache-nya sendiri dari _load_masters()/_merge_and_finalize() supaya progress bar
+    di load_and_process_data() nunjukin tahap yang lagi jalan beneran, bukan replay widget
+    (lihat catatan di load_and_process_data() soal cached element replay Streamlit)."""
+    df_order = _load_csvs(ORDER_DIR, "O", 2024, skip_cols=ORDER_SKIP_COLS)
+    df_supply = _load_csvs(SUPPLY_DIR, "S", 2023, skip_cols=SUPPLY_SKIP_COLS)
+    return df_order, df_supply
+
+
+@st.cache_data(show_spinner=False)
+def _load_masters(fingerprint):
+    """Load & normalisasi semua file Excel master/lookup (Customer, Target, Kal Kerja,
+    TMO/T-OPT/Chemical/TGB/7KP/DProg, Kelas Cabang) — dipisah dari _load_raw_csvs() karena
+    gak bergantung sama data Order/Supply sama sekali, jadi cache-nya independen."""
     df_customer_raw = pd.read_excel(CUSTOMER_FILE, engine="openpyxl")
     df_customer_raw.columns = df_customer_raw.columns.str.strip().str.replace(" ", "_")
 
@@ -134,25 +149,80 @@ def load_and_process_data(fingerprint):
     df_target = pd.read_excel(TARGET_FILE, engine="openpyxl")
     df_target.columns = df_target.columns.str.strip().str.replace(" ", "_")
     df_target = df_target[TARGET_COLS]
+    df_target["Bulan"] = df_target["Bulan"].astype(str).str.strip().str.capitalize().map(kamus_bulan).fillna(df_target["Bulan"]).str.strip()
 
-    clean_cols = lambda df: df.columns.str.strip().str.replace(r'\s+', '_', regex=True)
+    df_kalkerja = pd.read_excel(KALKERJA_FILE, engine="openpyxl")
+    df_kalkerja.columns = df_kalkerja.columns.str.strip().str.replace(" ", "_")
+    df_kalkerja = df_kalkerja[KALKERJA_COLS]
+    df_kalkerja["Tahun"] = df_kalkerja["Tahun"].astype(int)
+    df_kalkerja["Bulan_Num"] = df_kalkerja["Bulan_Num"].astype(int)
+    df_kalkerja["Hari_Kerja"] = df_kalkerja["Hari_Kerja"].astype(float)
 
     # ── Load Master Data Lookup ──
     df_tmo_lookup = pd.read_excel(TMO_FILE, engine="openpyxl")
-    df_tmo_lookup.columns = clean_cols(df_tmo_lookup)
+    df_tmo_lookup.columns = _clean_cols(df_tmo_lookup)
 
     df_topt_lookup = pd.read_excel(TOPT_FILE, engine="openpyxl")
-    df_topt_lookup.columns = clean_cols(df_topt_lookup)
+    df_topt_lookup.columns = _clean_cols(df_topt_lookup)
 
     df_chem_lookup = pd.read_excel(CHEM_FILE, engine="openpyxl")
-    df_chem_lookup.columns = clean_cols(df_chem_lookup)
+    df_chem_lookup.columns = _clean_cols(df_chem_lookup)
 
     df_tgb_lookup = pd.read_excel(BATTERY_FILE, engine="openpyxl")
-    df_tgb_lookup.columns = clean_cols(df_tgb_lookup)
+    df_tgb_lookup.columns = _clean_cols(df_tgb_lookup)
 
     # 🔄 [FIX 1-4] Loop untuk upper & strip Partnumber pada Master Data
     for df_master in [df_tmo_lookup, df_topt_lookup, df_chem_lookup, df_tgb_lookup]:
         df_master["Partnumber"] = df_master["Partnumber"].astype(str).str.upper().str.strip()
+
+    # ── 7KP Master ──
+    df_7kp_lookup = pd.read_excel(KP7_FILE, engine="openpyxl")
+    df_7kp_lookup.columns = _clean_cols(df_7kp_lookup)
+    # 🔄 [FIX 7] Upper & strip untuk master 7KP
+    df_7kp_lookup["Partnumber"] = df_7kp_lookup["Partnumber"].astype(str).str.upper().str.strip()
+    if "Grup_Part" in df_7kp_lookup.columns:
+        df_7kp_lookup.rename(columns={"Grup_Part": "Grup_Part_7KP"}, inplace=True)
+
+    # ── 7KP Prefix Rules (buat tebak partnumber substitusi yang belum diregister) ──
+    # dtype=str eksplisit di read_excel — tanpa ini pandas diam-diam infer kolom Prefix
+    # jadi angka dan leading zero (mis. "04465") hilang, walau cell aslinya sudah format Text.
+    df_7kp_prefix = pd.read_excel(KP7_PREFIX_FILE, engine="openpyxl", dtype={"Prefix": str})
+    df_7kp_prefix.columns = _clean_cols(df_7kp_prefix)
+    df_7kp_prefix["Prefix"] = df_7kp_prefix["Prefix"].str.strip()
+
+    # ── DProg Master (Item D) ──
+    df_dprog_lookup = pd.read_excel(DPROG_FILE, engine="openpyxl")
+    df_dprog_lookup.columns = _clean_cols(df_dprog_lookup)
+    # 🔄 [FIX 8] Upper & strip untuk master DProg
+    df_dprog_lookup["Partnumber"] = df_dprog_lookup["Partnumber"].astype(str).str.upper().str.strip()
+    df_dprog_lookup["StartDate"] = pd.to_datetime(df_dprog_lookup["StartDate"], errors="coerce")
+    df_dprog_lookup["EndDate"] = pd.to_datetime(df_dprog_lookup["EndDate"], errors="coerce")
+
+    # ── Kelas Cabang (buat estimasi margin COGS — generated dari ranking revenue 2025,
+    # exclude Jakarta & Medan yang punya rule margin sendiri) ──
+    df_kelas_cabang = pd.read_excel(KELAS_CABANG_FILE, engine="openpyxl")
+    df_kelas_cabang.columns = _clean_cols(df_kelas_cabang)
+
+    return (df_customer, df_customer_master, df_target, df_kalkerja, df_tmo_lookup,
+            df_topt_lookup, df_chem_lookup, df_tgb_lookup, df_7kp_lookup, df_7kp_prefix,
+            df_dprog_lookup, df_kelas_cabang)
+
+
+@st.cache_data(show_spinner=False)
+def _merge_and_finalize(fingerprint, _df_order, _df_supply, _df_customer, _df_target,
+                         _df_kelas_cabang):
+    """Merge Order/Supply mentah dengan Customer & Target, olah tanggal, turunkan SO_Type,
+    normalisasi Partnumber, dan hitung estimasi COGS/Profit.
+
+    Parameter di-prefix underscore supaya Streamlit skip hashing isi DataFrame besar ini —
+    `fingerprint` (dari compute_data_fingerprint()) udah cukup jadi cache key yang reliable,
+    karena berubah begitu ada file sumber yang berubah/baru.
+    """
+    df_order = _df_order
+    df_supply = _df_supply
+    df_customer = _df_customer
+    df_target = _df_target
+    df_kelas_cabang = _df_kelas_cabang
 
     df_order["Customer_No"] = df_order["Customer_No"].astype(str).str.upper().str.strip()
     df_order = pd.merge(df_order, df_customer, left_on="Customer_No", right_on="Kode_Customer", how="left").drop(columns=["Kode_Customer"])
@@ -174,15 +244,6 @@ def load_and_process_data(fingerprint):
     df_supply["Bulan_Num"] = df_supply["Invoice_Date"].dt.month
     df_supply["Bulan"] = df_supply["Invoice_Date"].dt.strftime("%B").map(kamus_bulan).str.strip()
     df_supply["Actual"] = (df_supply["Qty"] * df_supply["Retail_Price"]) / 1.11
-
-    df_target["Bulan"] = df_target["Bulan"].astype(str).str.strip().str.capitalize().map(kamus_bulan).fillna(df_target["Bulan"]).str.strip()
-
-    df_kalkerja = pd.read_excel(KALKERJA_FILE, engine="openpyxl")
-    df_kalkerja.columns = df_kalkerja.columns.str.strip().str.replace(" ", "_")
-    df_kalkerja = df_kalkerja[KALKERJA_COLS]
-    df_kalkerja["Tahun"] = df_kalkerja["Tahun"].astype(int)
-    df_kalkerja["Bulan_Num"] = df_kalkerja["Bulan_Num"].astype(int)
-    df_kalkerja["Hari_Kerja"] = df_kalkerja["Hari_Kerja"].astype(float)
 
     df_order = pd.merge(df_order, df_target, on=["Tahun", "Bulan_Num", "Bulan", "Cabang"], how="left")
     df_supply = pd.merge(df_supply, df_target, on=["Tahun", "Bulan_Num", "Bulan", "Cabang"], how="left")
@@ -220,34 +281,6 @@ def load_and_process_data(fingerprint):
     else:
         df_order["Scp_Disc"] = 0
 
-    # ── 7KP Master ──
-    df_7kp_lookup = pd.read_excel(KP7_FILE, engine="openpyxl")
-    df_7kp_lookup.columns = clean_cols(df_7kp_lookup)
-    # 🔄 [FIX 7] Upper & strip untuk master 7KP
-    df_7kp_lookup["Partnumber"] = df_7kp_lookup["Partnumber"].astype(str).str.upper().str.strip()
-    if "Grup_Part" in df_7kp_lookup.columns:
-        df_7kp_lookup.rename(columns={"Grup_Part": "Grup_Part_7KP"}, inplace=True)
-
-    # ── 7KP Prefix Rules (buat tebak partnumber substitusi yang belum diregister) ──
-    # dtype=str eksplisit di read_excel — tanpa ini pandas diam-diam infer kolom Prefix
-    # jadi angka dan leading zero (mis. "04465") hilang, walau cell aslinya sudah format Text.
-    df_7kp_prefix = pd.read_excel(KP7_PREFIX_FILE, engine="openpyxl", dtype={"Prefix": str})
-    df_7kp_prefix.columns = clean_cols(df_7kp_prefix)
-    df_7kp_prefix["Prefix"] = df_7kp_prefix["Prefix"].str.strip()
-
-    # ── DProg Master (Item D) ──
-    df_dprog_lookup = pd.read_excel(DPROG_FILE, engine="openpyxl")
-    df_dprog_lookup.columns = clean_cols(df_dprog_lookup)
-    # 🔄 [FIX 8] Upper & strip untuk master DProg
-    df_dprog_lookup["Partnumber"] = df_dprog_lookup["Partnumber"].astype(str).str.upper().str.strip()
-    df_dprog_lookup["StartDate"] = pd.to_datetime(df_dprog_lookup["StartDate"], errors="coerce")
-    df_dprog_lookup["EndDate"] = pd.to_datetime(df_dprog_lookup["EndDate"], errors="coerce")
-
-    # ── Kelas Cabang (buat estimasi margin COGS — generated dari ranking revenue 2025,
-    # exclude Jakarta & Medan yang punya rule margin sendiri) ──
-    df_kelas_cabang = pd.read_excel(KELAS_CABANG_FILE, engine="openpyxl")
-    df_kelas_cabang.columns = clean_cols(df_kelas_cabang)
-
     # ── Estimasi COGS & Profit ──
     # Data pembelian TASTI-ke-Toyota (Modal asli) ga bisa ditarik bulk (limit 10 hari/tarik),
     # jadi di-estimasi: Net Sales pakai kolom Discount asli (diskon TASTI->customer), COGS
@@ -278,4 +311,33 @@ def load_and_process_data(fingerprint):
     df_supply["Pct_Profit_Margin"] = np.where(df_supply["Net_Sales"] != 0, df_supply["Profit"] / df_supply["Net_Sales"] * 100, 0)
     df_supply = df_supply.drop(columns=["Margin_Low", "Margin_High"])
 
-    return df_order, df_supply, df_target, df_tmo_lookup, df_topt_lookup, df_chem_lookup, df_tgb_lookup, df_7kp_lookup, df_dprog_lookup, df_kalkerja, df_7kp_prefix, df_customer_master
+    return df_order, df_supply
+
+
+def load_and_process_data(fingerprint):
+    """Orchestrator TIDAK di-@st.cache_data — cuma manggil 3 sub-fungsi yang masing-masing
+    cached (_load_raw_csvs, _load_masters, _merge_and_finalize) dan update progress bar di
+    antaranya. Sengaja dipisah dari sub-fungsinya supaya st.progress() di sini gak kena
+    "cached element replay"-nya Streamlit — kalau widget progress ditaruh DI DALAM fungsi yang
+    di-cache, Streamlit bakal replay widget itu tiap kali fungsi dipanggil lagi walau hasilnya
+    diambil dari cache (bukan diproses ulang), jadi progress bar-nya nongol lagi seolah loading
+    dari awal padahal cuma replay instan. Dengan progress bar di luar, ia cuma keliatan lama
+    kalau sub-fungsinya BENERAN cache miss (proses dari nol)."""
+    progress_bar = st.progress(0, text="Memulai loading data...")
+
+    progress_bar.progress(10, text="Loading data Order & Supply (CSV)...")
+    df_order, df_supply = _load_raw_csvs(fingerprint)
+
+    progress_bar.progress(40, text="Loading master Customer/Target/TMO/T-OPT/Chemical/TGB/7KP/DProg...")
+    (df_customer, df_customer_master, df_target, df_kalkerja, df_tmo_lookup, df_topt_lookup,
+     df_chem_lookup, df_tgb_lookup, df_7kp_lookup, df_7kp_prefix, df_dprog_lookup,
+     df_kelas_cabang) = _load_masters(fingerprint)
+
+    progress_bar.progress(70, text="Merge Order/Supply, olah tanggal, hitung estimasi COGS & Profit...")
+    df_order, df_supply = _merge_and_finalize(fingerprint, df_order, df_supply, df_customer, df_target, df_kelas_cabang)
+
+    progress_bar.progress(100, text="Selesai!")
+    progress_bar.empty()
+
+    return (df_order, df_supply, df_target, df_tmo_lookup, df_topt_lookup, df_chem_lookup,
+            df_tgb_lookup, df_7kp_lookup, df_dprog_lookup, df_kalkerja, df_7kp_prefix, df_customer_master)

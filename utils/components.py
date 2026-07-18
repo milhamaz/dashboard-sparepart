@@ -303,6 +303,7 @@ def cleanup_selection(key, valid_options):
     return valid
 
 
+@st.cache_data(show_spinner=False)
 def build_pivot(data, subj_col, time_col, time_order, value_col, aggfunc, sort_mode="total_desc"):
     """Pivot 2 dimensi dengan margin TOTAL baris & kolom, kolom di-reindex ke seluruh
     `time_order` (kuartal/bulan yang belum ada datanya tetap tampil dengan nilai 0).
@@ -336,6 +337,7 @@ def build_pivot(data, subj_col, time_col, time_order, value_col, aggfunc, sort_m
     return pivot
 
 
+@st.cache_data(show_spinner=False)
 def classify_claim_goodwill(df_supply):
     """Split df_supply jadi df_claim & df_goodwill berdasar Qty minus & pola Invoice_No.
 
@@ -359,6 +361,7 @@ def classify_claim_goodwill(df_supply):
     return df_claim, df_goodwill
 
 
+@st.cache_data(show_spinner=False)
 def compute_customer_yoy(df_supply_final, pilih_tahun):
     """Bandingkan Actual per Customer_No antara pilih_tahun vs pilih_tahun-1, dipakai bareng
     oleh tab Retention/Churn & Alert Penurunan di page Customer.
@@ -408,16 +411,25 @@ def compute_customer_yoy(df_supply_final, pilih_tahun):
     return result[cols]
 
 
-def compute_reactivation_candidates(df_customer_master, df_supply_final, df_supply_raw, pilih_tahun,
-                                     pilih_jenis, pilih_kelas, pilih_area, pilih_cabang):
-    """Cari customer berstatus AKTIF di master (Customer.xlsx) tapi 0 transaksi di kedua tahun
-    (Last_Year & This_Year) pada scope Filter General yang sama dipakai compute_customer_yoy —
-    beda dari 'Churned' di tab Retention yang mensyaratkan Last_Year>0, jadi ini nangkep customer
-    yang sudah lama hilang dari radar YoY (2 tahun) tapi statusnya belum diupdate jadi TIDAK AKTIF.
+@st.cache_data(show_spinner=False)
+def compute_reactivation_candidates(df_customer_master, df_supply_raw, pilih_jenis, pilih_kelas,
+                                     pilih_area, pilih_cabang, reference_date, grace_period_days=365):
+    """Cari customer berstatus AKTIF di master (Customer.xlsx) tapi sudah `grace_period_days`
+    (default 365 = 12 bulan) tanpa transaksi Supply sama sekali, dihitung dari transaksi
+    TERAKHIR (`Last_Transaction`) sampai `reference_date` — beda dari 'Churned' di tab Retention
+    yang kalender-tahun-based, ini murni rolling window dari tanggal transaksi terakhir.
 
-    Last_Transaction diambil dari df_supply_raw (semua tahun yang ke-load, TANPA filter Bulan)
-    murni buat konteks/prioritas reaktivasi — bukan penentu status AKTIF/TIDAK, supaya customer
-    yang terakhir beli 2023 tetap kelihatan "sudah berapa lama" dibanding yang baru berhenti.
+    `reference_date` WAJIB dioper eksplisit oleh pemanggil (bukan pd.Timestamp.now() dipanggil
+    di dalam sini) — fungsi ini di-cache, dan st.cache_data cuma nge-invalidate kalau ARGUMENNYA
+    berubah. Kalau "sekarang" dipanggil di dalam fungsi yang di-cache, hasil dormant/tidaknya
+    customer bakal kebeku di tanggal cache pertama kali diisi sampai file data berubah — bisa
+    telat ngedeteksi customer yang baru lewat 12 bulan kalau kebetulan gak ada perubahan data
+    sama sekali di hari itu. Pemanggil cukup oper `pd.Timestamp.now().normalize()` — itu otomatis
+    beda tiap hari kalender, jadi cache-nya refresh sendiri harian tanpa perlu di-clear manual.
+
+    `df_supply_raw` sengaja data MENTAH (semua tahun yang ke-load, TANPA filter Bulan/Tahun) —
+    grace period ini gak terikat scope Tahun di Filter General, karena "sudah berapa lama sejak
+    transaksi terakhir" itu pertanyaan yang gak ada hubungannya sama Tahun mana yang lagi dipilih.
     """
     cols = ["Kode_Customer", "Nama_Customer", "Cabang", "Jenis_Customer", "Kelas_Customer", "Last_Transaction"]
     if df_customer_master is None or df_customer_master.empty:
@@ -433,37 +445,26 @@ def compute_reactivation_candidates(df_customer_master, df_supply_final, df_supp
     if scope.empty:
         return pd.DataFrame(columns=cols)
 
-    if df_supply_final is not None and not df_supply_final.empty:
-        agg = df_supply_final.groupby(["Customer_No", "Tahun"])["Actual"].sum().reset_index()
-        pivot = agg.pivot(index="Customer_No", columns="Tahun", values="Actual").fillna(0)
-        pivot = pivot.rename(columns={pilih_tahun - 1: "Last_Year", pilih_tahun: "This_Year"})
-        for col in ("Last_Year", "This_Year"):
-            if col not in pivot.columns:
-                pivot[col] = 0.0
-        pivot = pivot[["Last_Year", "This_Year"]].reset_index()
-    else:
-        pivot = pd.DataFrame(columns=["Customer_No", "Last_Year", "This_Year"])
-
-    merged = scope.merge(pivot, left_on="Kode_Customer", right_on="Customer_No", how="left")
-    merged["Last_Year"] = merged["Last_Year"].fillna(0)
-    merged["This_Year"] = merged["This_Year"].fillna(0)
-
-    candidates = merged[(merged["Last_Year"] <= 0) & (merged["This_Year"] <= 0)].copy()
-    if candidates.empty:
-        return pd.DataFrame(columns=cols)
-
     if df_supply_raw is not None and not df_supply_raw.empty:
         raw = df_supply_raw.copy()
         raw["Customer_No"] = raw["Customer_No"].astype(str).str.upper().str.strip()
         last_trans = raw.groupby("Customer_No")["Invoice_Date"].max()
-        candidates["Last_Transaction"] = candidates["Kode_Customer"].map(last_trans)
+        scope["Last_Transaction"] = scope["Kode_Customer"].map(last_trans)
     else:
-        candidates["Last_Transaction"] = pd.NaT
+        scope["Last_Transaction"] = pd.NaT
+
+    is_dormant = scope["Last_Transaction"].isna() | (
+        (reference_date - scope["Last_Transaction"]).dt.days >= grace_period_days
+    )
+    candidates = scope[is_dormant].copy()
+    if candidates.empty:
+        return pd.DataFrame(columns=cols)
 
     candidates = candidates.sort_values("Last_Transaction", ascending=False, na_position="last")
     return candidates[cols]
 
 
+@st.cache_data(show_spinner=False)
 def compute_odom_status(df_order_final, df_kalkerja, pilih_tahun, pilih_bulan, ambang_bulanan=30_000_000, ambang_hari_aktif=50.0):
     """ODOM (One Million One Day) — customer sehat kalau Order-nya rutin ≥Rp1 juta/hari
     (~Rp30 juta/bulan). Basisnya ORDER (bukan Actual/Supply), dan scope Bulan/Tahun ikut
@@ -559,12 +560,17 @@ def render_topn_barh_chart(df, label_col, value_col, top_n, color, value_fmt, xa
 
 def render_bidirectional_barh_chart(df, label_col, left_col, right_col, left_name, right_name,
                                      left_color, right_color, value_fmt, key,
-                                     xaxis_title=None, left_hover_extra=None, right_hover_extra=None):
+                                     xaxis_title=None, left_hover_extra=None, right_hover_extra=None,
+                                     left_value_label=None, right_value_label=None):
     """Bar chart horizontal 2 arah dari titik tengah 0 — 1 metrik ke kiri (mis. Order), metrik
     lain ke kanan (mis. Actual), berbagi 1 sumbu magnitude yang sama (dicerminkan, bukan
     dual-axis) supaya 2 metrik per kategori langsung kebandingin panjang bar-nya. `df` sudah
     harus dalam urutan tampil yang diinginkan (mis. hasil nlargest) — fungsi ini tidak
     mengurutkan ulang.
+
+    `left_value_label`/`right_value_label` opsional — kalau diisi, baris ke-2 hover jadi
+    "{label}: {value}" (mis. "Pencapaian O/T: 105.3%") alih-alih cuma angka polos tanpa
+    keterangan. Default None mempertahankan perilaku lama (dipakai tab_salesman_leaderboard.py).
     """
     if df.empty:
         st.info("Tidak ada data untuk chart.")
@@ -578,8 +584,9 @@ def render_bidirectional_barh_chart(df, label_col, left_col, right_col, left_nam
     gap = raw_max * 0.16
     outer_max = raw_max * 1.15 + gap
 
-    def _hovertext(row, col, extra_cols):
-        lines = [f"<b>{row[label_col]}</b>", value_fmt(row[col])]
+    def _hovertext(row, col, extra_cols, value_label):
+        main_line = f"{value_label}: {value_fmt(row[col])}" if value_label else value_fmt(row[col])
+        lines = [f"<b>{row[label_col]}</b>", main_line]
         if extra_cols:
             lines += [f"{label}: {fmt(row[c])}" for c, label, fmt in extra_cols]
         return "<br>".join(lines)
@@ -590,7 +597,7 @@ def render_bidirectional_barh_chart(df, label_col, left_col, right_col, left_nam
         marker_color=left_color,
         text=[value_fmt(v) for v in df[left_col]],
         textposition="auto", textfont=dict(color="#f8fafc", size=12),
-        hovertext=[_hovertext(row, left_col, left_hover_extra) for _, row in df.iterrows()],
+        hovertext=[_hovertext(row, left_col, left_hover_extra, left_value_label) for _, row in df.iterrows()],
         hovertemplate="%{hovertext}<extra></extra>",
     ))
     fig.add_trace(go.Bar(
@@ -598,7 +605,7 @@ def render_bidirectional_barh_chart(df, label_col, left_col, right_col, left_nam
         marker_color=right_color,
         text=[value_fmt(v) for v in df[right_col]],
         textposition="auto", textfont=dict(color="#f8fafc", size=12),
-        hovertext=[_hovertext(row, right_col, right_hover_extra) for _, row in df.iterrows()],
+        hovertext=[_hovertext(row, right_col, right_hover_extra, right_value_label) for _, row in df.iterrows()],
         hovertemplate="%{hovertext}<extra></extra>",
     ))
 
@@ -697,6 +704,7 @@ def render_qty_heatmap(df, value_col, group_col="Cabang", month_col="Bulan", key
         unsafe_allow_html=True)
 
 
+@st.cache_data(show_spinner=False)
 def compute_item_d_burn(df_order, df_dprog_lookup):
     """Match Order rows ke program Item D (PnoDProg) berdasar Partnumber + tanggal jatuh
     dalam StartDate-EndDate program, lalu hitung Revenue & Burn per baris.
@@ -733,6 +741,7 @@ def compute_item_d_burn(df_order, df_dprog_lookup):
     return df_matched
 
 
+@st.cache_data(show_spinner=False)
 def merge_lookup_triplet(df_order_final, df_supply_final, df_lookup, lookup_cols, pilih_tahun):
     """Merge Order (tahun berjalan) & Supply (tahun ini + tahun lalu) dengan 1 lookup master
     berdasar Partnumber — pola yang dipakai bareng oleh tab TMO/Chemical/TGB/T-OPT, sebelumnya
@@ -754,6 +763,7 @@ def merge_lookup_triplet(df_order_final, df_supply_final, df_lookup, lookup_cols
     return df_ord, df_sup, df_ly
 
 
+@st.cache_data(show_spinner=False)
 def aggregate_monthly(df, value_col, out_col=None):
     """Groupby Bulan_Num/Bulan, sum `value_col`, di-rename ke `out_col` kalau beda nama.
     Aman untuk df kosong (return DataFrame kosong dengan kolom yang tetap konsisten)."""
@@ -1058,6 +1068,38 @@ def hitung_avg(total, monthly_df, col_name):
     """Hitung rata-rata hanya dari bulan yang punya nilai > 0."""
     pembagi = (monthly_df[col_name] > 0).sum() if not monthly_df.empty else 0
     return (total / pembagi) if pembagi > 0 else 0
+
+
+def scope_label_cabang(pilih_cabang, all_cabang_list):
+    """Tag [NASIONAL]/[nama Cabang] buat judul card yang scope-nya ikut Filter General:
+    semua opsi Cabang dipilih -> "NASIONAL", cuma 1 Cabang dipilih -> nama Cabang itu
+    (uppercase), 2+ tapi bukan semua -> None (tag disembunyikan, ambigu buat ditampilkan)."""
+    if not all_cabang_list or set(pilih_cabang) >= set(all_cabang_list):
+        return "NASIONAL"
+    if len(pilih_cabang) == 1:
+        return str(pilih_cabang[0]).upper()
+    return None
+
+
+def scope_label_periode(pilih_bulan, all_bulan_list, pilih_tahun):
+    """Tag [Tahun]/[nama Bulan] buat judul card: semua opsi Bulan dipilih -> Tahun terpilih,
+    cuma 1 Bulan dipilih -> nama Bulan itu (uppercase), 2+ tapi bukan semua -> None (skip)."""
+    if not all_bulan_list or set(pilih_bulan) >= set(all_bulan_list):
+        return str(pilih_tahun)
+    if len(pilih_bulan) == 1:
+        return str(pilih_bulan[0]).upper()
+    return None
+
+
+def build_scope_title(base_title, pilih_cabang, all_cabang_list, pilih_bulan, all_bulan_list, pilih_tahun):
+    """Gabung title dasar dengan tag Cabang/Periode sesuai scope Filter General yang lagi
+    aktif (tanpa tanda kurung, cuma dipisah spasi). Tag yang None (2+ dipilih tapi bukan
+    semua opsi) otomatis diskip, bukan ikut nampilin 'None' di judul."""
+    tags = [t for t in (
+        scope_label_cabang(pilih_cabang, all_cabang_list),
+        scope_label_periode(pilih_bulan, all_bulan_list, pilih_tahun),
+    ) if t]
+    return f"{base_title} {' '.join(tags)}" if tags else base_title
 
 
 def render_card(icon, title, value, sub):

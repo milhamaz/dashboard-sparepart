@@ -8,7 +8,7 @@ from utils.components import (
     render_card, render_growth_card, render_bidirectional_barh_chart, render_styled_table,
     auto_table_height, hitung_growth,
 )
-from utils.styles import fmt_rp_full as FMT_RP, highlight_growth_pct as _highlight_growth_pct
+from utils.styles import fmt_rp_full as FMT_RP, highlight_growth_pct_fill as _highlight_growth_pct
 
 
 def render(df_order_final, df_supply_final, pilih_tahun, fmt_rp):
@@ -98,7 +98,11 @@ def render(df_order_final, df_supply_final, pilih_tahun, fmt_rp):
         st.markdown(render_growth_card("", "YoY Growth Nasional", national_growth, f"Actual vs {pilih_tahun - 1}"), unsafe_allow_html=True)
 
     st.markdown("#### Top 10 Salesman — Order vs Actual")
-    top10 = leaderboard.nlargest(10, "Actual")
+    sort_basis = st.radio(
+        "Urutkan Top 10 berdasarkan", ["Order", "Actual"], index=1, horizontal=True,
+        key="salesman_leaderboard_sort_basis",
+    )
+    top10 = leaderboard.nlargest(10, sort_basis)
     render_bidirectional_barh_chart(
         top10, "Salesman_Name", "Order", "Actual", "Order", "Actual",
         left_color="#f97316", right_color="#2563eb", value_fmt=fmt_rp,

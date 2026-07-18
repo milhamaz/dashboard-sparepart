@@ -21,19 +21,25 @@ highlight_pct = lambda val: (
     else 'background-color: rgba(239, 68, 68, 0.1); color: #ef4444; font-weight: bold;'
 )
 
-def highlight_achievement_pct(val):
-    """Hijau kalau Achievement/O-T ratio >=100% (capai target), merah kalau di bawahnya —
-    dipakai tabel detail (bukan card) yang butuh warna teks polos tanpa tint background,
-    beda dari highlight_pct di atas. Sebelumnya diketik ulang identik sebagai
-    _highlight_ot/_highlight_achievement di beberapa file views/tab_*.py."""
-    color = "#10b981" if val >= 100 else "#ef4444"
-    return f"color: {color}; font-weight: bold;"
-
 def highlight_growth_pct(val):
-    """Hijau kalau growth >=0%, merah kalau minus — beda dari highlight_achievement_pct di
-    atas (threshold 100%, buat rasio A/LY atau O/T) karena growth YoY center-nya di 0%."""
+    """Hijau kalau growth >=0%, merah kalau minus — beda dari highlight_pct di atas
+    (threshold 100%, buat rasio Achievement/O-T/A-T) karena growth YoY center-nya di 0%."""
     color = "#10b981" if val >= 0 else "#ef4444"
     return f"color: {color}; font-weight: bold;"
+
+highlight_growth_pct_fill = lambda val: (
+    'background-color: rgba(34, 197, 94, 0.1); color: #22c55e; font-weight: bold;'
+    if val >= 0
+    else 'background-color: rgba(239, 68, 68, 0.1); color: #ef4444; font-weight: bold;'
+)
+
+# Fill merah kalau ketergantungan ke 1 customer >=50% dari total revenue subjek (dipakai
+# tab Productivity) — threshold beda dari highlight_pct di atas (center 100%, buat Achievement).
+highlight_concentration_pct = lambda val: (
+    'background-color: rgba(239, 68, 68, 0.15); color: #ef4444; font-weight: bold;'
+    if val >= 50
+    else 'background-color: rgba(34, 197, 94, 0.08); color: #22c55e;'
+)
 
 CARD_STYLE = """
 <style>

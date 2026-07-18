@@ -14,24 +14,21 @@ def _highlight_decline(val):
 
 
 def render(df_supply_final, pilih_tahun):
-    st.caption(
-        "Customer yang MASIH beli di kedua tahun (Retained), tapi nilainya turun melebihi ambang "
-        "batas di bawah — sinyal lebih awal daripada Churned (yang baru ketahuan setelah customer "
-        "benar-benar berhenti total)."
-    )
-
     yoy = compute_customer_yoy(df_supply_final, pilih_tahun)
     if yoy.empty:
         st.info("Tidak ada data Supply untuk filter yang dipilih.")
         return
 
+    st.markdown("### Ambang batas penurunan (%)")
     threshold = st.slider(
         "Ambang batas penurunan (%)", min_value=10, max_value=90, value=30, step=5,
-        key="customer_alert_threshold", help="Customer Retained dengan penurunan >= ambang ini akan muncul di daftar.",
+        key="customer_alert_threshold", label_visibility="collapsed",
+        help="Customer Retained dengan penurunan >= ambang ini akan muncul di daftar.",
     )
 
     at_risk = yoy[(yoy["Status"] == "Retained") & (yoy["Pct_Change"] <= -threshold)].copy()
     at_risk["Value_Lost"] = at_risk["Last_Year"] - at_risk["This_Year"]
+    at_risk["Customer"] = at_risk["Customer_No"].astype(str) + " - " + at_risk["Customer_Name"].astype(str)
     at_risk = at_risk.sort_values("Pct_Change", ascending=True)
 
     total_value_lost = at_risk["Value_Lost"].sum()
@@ -49,9 +46,15 @@ def render(df_supply_final, pilih_tahun):
         st.info(f"Tidak ada customer dengan penurunan ≥{threshold}% untuk filter yang dipilih.")
         return
 
-    display = at_risk[["Customer_No", "Customer_Name", "Cabang", "Last_Year", "This_Year", "Pct_Change", "Value_Lost"]].rename(
+    search_query = st.text_input(
+        "Cari Customer (kode/nama)", key="alert_search_query", placeholder="Ketik kode atau nama customer...",
+    )
+    if search_query.strip():
+        q = search_query.strip().upper()
+        at_risk = at_risk[at_risk["Customer"].str.upper().str.contains(q, na=False)]
+
+    display = at_risk[["Customer", "Cabang", "Last_Year", "This_Year", "Pct_Change", "Value_Lost"]].rename(
         columns={
-            "Customer_No": "Kode Customer", "Customer_Name": "Nama Customer",
             "Last_Year": f"Actual {pilih_tahun - 1}", "This_Year": f"Actual {pilih_tahun}",
             "Pct_Change": "Perubahan (%)", "Value_Lost": "Nilai Hilang",
         }
@@ -63,4 +66,11 @@ def render(df_supply_final, pilih_tahun):
         }),
         use_container_width=True, hide_index=True,
         height=min(auto_table_height(len(display)), 600),
+    )
+
+    st.markdown("---")
+    st.markdown("### Penjelasan")
+    st.markdown(
+        "- Customer yang **masih beli di kedua tahun (Retained)**, tapi nilainya turun melebihi ambang batas di atas.\n"
+        "- Sinyal lebih awal dibanding **Churned** — customer di sini belum berhenti total, tapi sudah menunjukkan tanda-tanda penurunan yang perlu diwaspadai."
     )

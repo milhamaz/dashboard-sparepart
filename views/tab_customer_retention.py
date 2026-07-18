@@ -7,18 +7,23 @@ from utils.components import render_card, auto_table_height, compute_customer_yo
 from utils.styles import fmt_rp_full as FMT_RP
 
 
-def render(df_supply_final, pilih_tahun):
-    st.caption(
-        "**Retained** = beli di tahun lalu & tahun ini. **Churned** = beli tahun lalu tapi tidak "
-        "tahun ini. **New** = baru beli tahun ini, tidak ada transaksi tahun lalu. Mengikuti scope "
-        "Bulan/Area/Cabang/Jenis/Kelas Customer dari Filter General — kalau Bulan yang dipilih cuma "
-        "sebagian, perbandingannya jadi periode yang sama di kedua tahun, bukan setahun penuh."
+def _search_box(df, key):
+    query = st.text_input(
+        "Cari Customer (kode/nama)", key=key, placeholder="Ketik kode atau nama customer...",
     )
+    if query.strip():
+        q = query.strip().upper()
+        df = df[df["Customer"].str.upper().str.contains(q, na=False)]
+    return df
 
+
+def render(df_supply_final, pilih_tahun):
     yoy = compute_customer_yoy(df_supply_final, pilih_tahun)
     if yoy.empty:
         st.info("Tidak ada data Supply untuk filter yang dipilih.")
         return
+
+    yoy["Customer"] = yoy["Customer_No"].astype(str) + " - " + yoy["Customer_Name"].astype(str)
 
     n_ly = (yoy["Last_Year"] > 0).sum()
     n_this = (yoy["This_Year"] > 0).sum()
@@ -43,30 +48,39 @@ def render(df_supply_final, pilih_tahun):
             unsafe_allow_html=True,
         )
 
+    st.markdown("#### Customer Baru — diurutkan dari nilai terbesar tahun ini")
+    new_cust = yoy[yoy["Status"] == "New"].sort_values("This_Year", ascending=False).copy()
+    if new_cust.empty:
+        st.info("Tidak ada customer baru untuk filter yang dipilih.")
+    else:
+        new_cust = _search_box(new_cust, key="retention_search_new")
+        display_new = new_cust[["Customer", "Cabang", "This_Year"]].rename(columns={"This_Year": f"Actual {pilih_tahun}"})
+        st.dataframe(
+            display_new.style.format({f"Actual {pilih_tahun}": FMT_RP}),
+            use_container_width=True, hide_index=True,
+            height=min(auto_table_height(len(display_new)), 500),
+        )
+
     st.markdown("#### Customer Churned — diurutkan dari nilai terbesar tahun lalu")
     churned = yoy[yoy["Status"] == "Churned"].sort_values("Last_Year", ascending=False).copy()
     if churned.empty:
         st.info("Tidak ada customer yang churn untuk filter yang dipilih.")
     else:
-        display_churned = churned[["Customer_No", "Customer_Name", "Cabang", "Last_Year"]].rename(
-            columns={"Customer_No": "Kode Customer", "Customer_Name": "Nama Customer", "Last_Year": f"Actual {pilih_tahun - 1}"}
-        )
+        churned = _search_box(churned, key="retention_search_churned")
+        display_churned = churned[["Customer", "Cabang", "Last_Year"]].rename(columns={"Last_Year": f"Actual {pilih_tahun - 1}"})
         st.dataframe(
             display_churned.style.format({f"Actual {pilih_tahun - 1}": FMT_RP}),
             use_container_width=True, hide_index=True,
             height=min(auto_table_height(len(display_churned)), 500),
         )
 
-    st.markdown("#### Customer Baru — diurutkan dari nilai terbesar tahun ini")
-    new_cust = yoy[yoy["Status"] == "New"].sort_values("This_Year", ascending=False).copy()
-    if new_cust.empty:
-        st.info("Tidak ada customer baru untuk filter yang dipilih.")
-    else:
-        display_new = new_cust[["Customer_No", "Customer_Name", "Cabang", "This_Year"]].rename(
-            columns={"Customer_No": "Kode Customer", "Customer_Name": "Nama Customer", "This_Year": f"Actual {pilih_tahun}"}
-        )
-        st.dataframe(
-            display_new.style.format({f"Actual {pilih_tahun}": FMT_RP}),
-            use_container_width=True, hide_index=True,
-            height=min(auto_table_height(len(display_new)), 500),
-        )
+    st.markdown("---")
+    st.markdown("### Penjelasan")
+    st.markdown(
+        "- **Retained** — customer yang bertahan, beli baik di tahun lalu maupun tahun ini.\n"
+        "- **New** — customer baru, baru mulai beli tahun ini dan tidak ada transaksi tahun lalu.\n"
+        "- **Churned** — customer non-aktif, sempat beli tahun lalu tapi berhenti (tidak ada transaksi tahun ini).\n"
+        "- Semua kategori mengikuti scope Bulan/Area/Cabang/Jenis/Kelas Customer dari Filter General — "
+        "kalau Bulan yang dipilih cuma sebagian, perbandingannya jadi periode yang sama di kedua tahun, "
+        "bukan setahun penuh."
+    )

@@ -76,4 +76,4 @@ def render_top_filters(df_order, df_supply, page_key):
     df_order_final = df_order_area[mask_final(df_order_area)].copy()
     df_supply_final = df_supply_area[mask_final(df_supply_area)].copy()
 
-    return df_order_final, df_supply_final, pilih_tahun, pilih_bulan, pilih_cabang, pilih_jenis, pilih_kelas, pilih_area
+    return df_order_final, df_supply_final, pilih_tahun, pilih_bulan, pilih_cabang, pilih_jenis, pilih_kelas, pilih_area, cabang_list

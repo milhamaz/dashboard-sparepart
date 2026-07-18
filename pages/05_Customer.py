@@ -6,7 +6,7 @@ from utils.data_loader import load_and_process_data, compute_data_fingerprint
 from utils.filters import render_top_filters
 from utils.styles import inject_styles, fmt_rp
 from utils.components import render_nav_bar, render_footer
-from views import tab_customer_retention, tab_customer_alert, tab_customer_reactivation, tab_customer_target, tab_odom
+from views import tab_customer_retention, tab_customer_alert, tab_suggested_status, tab_customer_target, tab_odom
 
 st.set_page_config(page_title="Customer", page_icon="🤝", layout="wide", initial_sidebar_state="collapsed")
 
@@ -25,12 +25,21 @@ render_nav_bar("customer")
  df_7kp_prefix, df_customer_master) = load_and_process_data(compute_data_fingerprint())
 
 # ── Filter General ──
-df_order_final, df_supply_final, pilih_tahun, pilih_bulan, pilih_cabang, pilih_jenis, pilih_kelas, pilih_area = render_top_filters(df_order, df_supply, page_key="customer")
+df_order_final, df_supply_final, pilih_tahun, pilih_bulan, pilih_cabang, pilih_jenis, pilih_kelas, pilih_area, cabang_list = render_top_filters(df_order, df_supply, page_key="customer")
 
 # ── Tabs ──
-tab_retention_ui, tab_alert_ui, tab_reactivation_ui, tab_target_customer_ui, tab_odom_ui = st.tabs(
-    ["🔄 Retention & Churn", "🚨 Alert Penurunan", "🎯 Reaktivasi", "📊 Target Customer", "📅 ODOM"]
+tab_target_customer_ui, tab_odom_ui, tab_retention_ui, tab_alert_ui, tab_suggested_status_ui = st.tabs(
+    ["📊 Target Customer", "📅 ODOM", "🔄 Retention & Churn", "🚨 Alert Penurunan", "🎯 Suggested Status"]
 )
+
+with tab_target_customer_ui:
+    tab_customer_target.render(
+        df_order, df_supply_final, df_target, df_customer_master, pilih_tahun, pilih_bulan,
+        pilih_jenis, pilih_kelas, pilih_area, pilih_cabang, cabang_list, fmt_rp,
+    )
+
+with tab_odom_ui:
+    tab_odom.render(df_order_final, df_kalkerja, pilih_tahun, pilih_bulan)
 
 with tab_retention_ui:
     tab_customer_retention.render(df_supply_final, pilih_tahun)
@@ -38,19 +47,9 @@ with tab_retention_ui:
 with tab_alert_ui:
     tab_customer_alert.render(df_supply_final, pilih_tahun)
 
-with tab_reactivation_ui:
-    tab_customer_reactivation.render(
-        df_customer_master, df_supply_final, df_supply,
-        pilih_tahun, pilih_jenis, pilih_kelas, pilih_area, pilih_cabang,
+with tab_suggested_status_ui:
+    tab_suggested_status.render(
+        df_customer_master, df_supply, pilih_jenis, pilih_kelas, pilih_area, pilih_cabang,
     )
-
-with tab_target_customer_ui:
-    tab_customer_target.render(
-        df_order, df_target, df_customer_master, pilih_tahun, pilih_bulan,
-        pilih_jenis, pilih_kelas, pilih_area, pilih_cabang, fmt_rp,
-    )
-
-with tab_odom_ui:
-    tab_odom.render(df_order_final, df_kalkerja, pilih_tahun, pilih_bulan)
 
 render_footer()

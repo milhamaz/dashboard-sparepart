@@ -1,11 +1,11 @@
 # ============================================================
-# 🏢 TAB: CABANG SCORECARD
+# 🏢 TAB: TARGET CABANG
 # ============================================================
 import streamlit as st
 import pandas as pd
 
 from utils.components import render_card, render_bidirectional_barh_chart, render_styled_table, auto_table_height, hitung_aly
-from utils.styles import fmt_rp_full as FMT_RP, highlight_achievement_pct as _highlight_achievement
+from utils.styles import fmt_rp_full as FMT_RP, highlight_pct as _highlight_achievement
 
 
 def render(df_order_final, df_supply_final, df_target, pilih_tahun, pilih_bulan, pilih_cabang, fmt_rp):
@@ -67,12 +67,17 @@ def render(df_order_final, df_supply_final, df_target, pilih_tahun, pilih_bulan,
         st.markdown(render_card("⚠️", "Perlu Perhatian", worst_row["Cabang"], f"{worst_row['Achievement (%)']:.1f}%"), unsafe_allow_html=True)
 
     st.markdown("#### Top 10 Cabang — %O/T vs %A/T")
-    # Panjang bar sengaja dibikin dari %O/T & %A/T (bukan Rp Order/Actual mentah) — Cabang
-    # Scorecard ini pusatnya soal pencapaian vs Target, jadi cabang kecil dengan Achievement
+    # Panjang bar sengaja dibikin dari %O/T & %A/T (bukan Rp Order/Actual mentah) — Target
+    # Cabang ini pusatnya soal pencapaian vs Target, jadi cabang kecil dengan Achievement
     # tinggi (mis. Pontianak) harus kelihatan lebih menonjol di grafik daripada cabang besar
     # dengan Achievement rendah (mis. Jakarta), meski nilai Rp-nya jauh lebih kecil. Rp
     # mentahnya tetap ada, cuma dipindah ke hover.
-    top10 = scorecard.nlargest(10, "Achievement (%)")
+    sort_basis = st.radio(
+        "Urutkan Top 10 berdasarkan", ["Order (%O/T)", "Actual (%A/T)"], index=1, horizontal=True,
+        key="cabang_scorecard_sort_basis",
+    )
+    sort_col = "Order_Achievement (%)" if sort_basis == "Order (%O/T)" else "Achievement (%)"
+    top10 = scorecard.nlargest(10, sort_col)
     pct_fmt = lambda v: f"{v:.1f}%"
     render_bidirectional_barh_chart(
         top10, "Cabang", "Order_Achievement (%)", "Achievement (%)", "Order", "Actual",
@@ -88,12 +93,12 @@ def render(df_order_final, df_supply_final, df_target, pilih_tahun, pilih_bulan,
         ],
     )
 
-    st.markdown("#### Scorecard Lengkap per Cabang")
-    display = scorecard[["Cabang", "Target", "Actual", "Achievement (%)"]].copy()
-    display.insert(0, "Rank", range(1, len(display) + 1))
+    st.markdown("#### Ranking Lengkap Target Cabang")
+    display = scorecard[["Cabang", "Target", "Order", "Actual", "Order_Achievement (%)", "Achievement (%)"]].copy()
+    display = display.rename(columns={"Order_Achievement (%)": "O/T", "Achievement (%)": "A/T"})
 
     render_styled_table(
-        display, _highlight_achievement, pct_cols=["Achievement (%)"],
-        fmt_dict={"Target": FMT_RP, "Actual": FMT_RP, "Achievement (%)": "{:.2f}%"},
+        display, _highlight_achievement, pct_cols=["O/T", "A/T"],
+        fmt_dict={"Target": FMT_RP, "Order": FMT_RP, "Actual": FMT_RP, "O/T": "{:.2f}%", "A/T": "{:.2f}%"},
         height=min(auto_table_height(len(display)), 600),
     )

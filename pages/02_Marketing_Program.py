@@ -25,7 +25,7 @@ render_nav_bar("marketing")
  df_7kp_prefix, _df_customer_master) = load_and_process_data(compute_data_fingerprint())
 
 # ── Filter General ──
-df_order_final, df_supply_final, pilih_tahun, pilih_bulan, pilih_cabang, pilih_jenis, pilih_kelas, pilih_area = render_top_filters(df_order, df_supply, page_key="marketing")
+df_order_final, df_supply_final, pilih_tahun, pilih_bulan, pilih_cabang, pilih_jenis, pilih_kelas, pilih_area, cabang_list = render_top_filters(df_order, df_supply, page_key="marketing")
 
 # ── Tabs ──
 tab_7kp_ui, tab_dprog_ui, tab_gebyur_ui = st.tabs(

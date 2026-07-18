@@ -42,6 +42,14 @@ KELAS_FLOOR_BARU = {"E": 30_000_000, "D": 35_000_000, "C": 40_000_000, "B": 45_0
 # di sini karena keduanya cabang besar.
 CABANG_KELAS_OVERRIDE = {"JAKARTA": "A", "MEDAN": "A"}
 
+# Customer_No yang dikecualikan dari cascade Target Customer — "121HO" (TASTI HEAD OFFICE)
+# nampung order fiktif/internal kantor pusat, bukan customer pasar riil. Kalau ikut dihitung,
+# lonjakan volumenya "mencuri" porsi besar Target Cabang JAKARTA dari trailing share
+# (window 12 bulan), bikin customer riil lain di Jakarta dapat Target lebih kecil dari
+# semestinya. Order/Supply-nya sendiri TETAP utuh di semua tab/halaman lain (baca df_order/
+# df_supply mentah, bukan hasil cascade ini) — exclude ini cuma soal pembagian Target.
+EXCLUDED_FROM_TARGET_SPLIT = {"121HO"}
+
 
 def get_cabang_kelas_map(df_kelas_cabang):
     mapping = dict(zip(df_kelas_cabang["Cabang"], df_kelas_cabang["Kelas"]))
@@ -58,6 +66,8 @@ def compute_customer_target_month(df_order_raw, df_target, kelas_map, target_tah
     MENTAH (semua tahun yang ke-load, tidak dipotong Filter General) — window trailing
     perlu menengok jauh ke belakang terlepas dari Bulan/Cabang yang lagi difilter user.
     """
+    df_order_raw = df_order_raw[~df_order_raw["Customer_No"].isin(EXCLUDED_FROM_TARGET_SPLIT)]
+
     order_key = df_order_raw["Tahun"] * 12 + df_order_raw["Bulan_Num"]
     cutoff = _month_key(target_tahun, target_bulan_num)
     win_start, win_end = cutoff - 12, cutoff - 1
@@ -159,10 +169,19 @@ def compute_current_salesman(df_order_raw, pilih_tahun, bulan_num_list):
     PALING BARU yang gak melewati akhir periode target (no leakage ke bulan setelahnya),
     supaya Target Salesman bulan lalu gak berubah gara-gara reassignment yang baru
     kejadian belakangan.
+
+    Customer di EXCLUDED_FROM_TARGET_SPLIT (mis. "121HO") ikut di-drop di sini juga —
+    bukan cuma di compute_customer_target_month() — supaya Order/Actual milik akun fiktif
+    itu gak nyasar dikreditkan ke Salesman manapun lewat compute_salesman_order/actual()
+    (yang sama-sama pakai mapping ini), sementara Target-nya sendiri emang udah gak ada.
+    Tanpa ini, O/T & A/T Salesman yang kebetulan "pegang" akun itu jadi kebesaran (numerator
+    ikut 121HO, denominator/Target-nya enggak).
     """
     cols = ["Customer_No", "Salesman_Code", "Salesman_Name"]
     if df_order_raw is None or df_order_raw.empty or not bulan_num_list:
         return pd.DataFrame(columns=cols)
+
+    df_order_raw = df_order_raw[~df_order_raw["Customer_No"].isin(EXCLUDED_FROM_TARGET_SPLIT)]
 
     cutoff = _month_key(pilih_tahun, max(bulan_num_list))
     order_key = df_order_raw["Tahun"] * 12 + df_order_raw["Bulan_Num"]
@@ -202,6 +221,26 @@ def compute_salesman_order(df_order_raw, pilih_tahun, bulan_num_list, current_sa
     merged["Order"] = merged["Order"].fillna(0)
 
     result = merged.groupby("Salesman_Code", as_index=False)["Order"].sum()
+    return result[cols]
+
+
+def compute_salesman_actual(df_supply_final, pilih_tahun, bulan_num_list, current_salesman):
+    """Actual (Supply) per Salesman_Code untuk periode `bulan_num_list`, diatribusikan pakai
+    mapping `current_salesman` yang SAMA dipakai compute_salesman_order() — supaya Order dan
+    Actual apple-to-apple, dikreditkan ke pemegang customer yang sama persis (lihat docstring
+    compute_salesman_order() soal kenapa atribusinya berdasar pemegang SEKARANG, bukan histori).
+    """
+    cols = ["Salesman_Code", "Actual"]
+    if df_supply_final is None or df_supply_final.empty or not bulan_num_list:
+        return pd.DataFrame(columns=cols)
+
+    scope = df_supply_final[(df_supply_final["Tahun"] == pilih_tahun) & (df_supply_final["Bulan_Num"].isin(bulan_num_list))]
+    actual_by_cust = scope.groupby("Customer_No")["Actual"].sum().rename("Actual").reset_index()
+
+    merged = current_salesman.merge(actual_by_cust, on="Customer_No", how="left")
+    merged["Actual"] = merged["Actual"].fillna(0)
+
+    result = merged.groupby("Salesman_Code", as_index=False)["Actual"].sum()
     return result[cols]
 
 

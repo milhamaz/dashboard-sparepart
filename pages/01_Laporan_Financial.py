@@ -25,7 +25,7 @@ render_nav_bar("financial")
  df_7kp_prefix, _df_customer_master) = load_and_process_data(compute_data_fingerprint())
 
 # ── Filter General ──
-df_order_final, df_supply_final, pilih_tahun, pilih_bulan, pilih_cabang, pilih_jenis, pilih_kelas, pilih_area = render_top_filters(df_order, df_supply, page_key="financial")
+df_order_final, df_supply_final, pilih_tahun, pilih_bulan, pilih_cabang, pilih_jenis, pilih_kelas, pilih_area, cabang_list = render_top_filters(df_order, df_supply, page_key="financial")
 
 # ── Tabs ──
 tab_perf, tab_pacing_ui, tab_tmo_ui, tab_chem_ui, tab_battery_ui, tab_topt_ui, tab_cogs_ui = st.tabs(
