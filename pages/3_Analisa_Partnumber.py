@@ -5,23 +5,29 @@ import streamlit as st
 import pandas as pd
 from utils.data_loader import load_and_process_data, compute_data_fingerprint, list_bulan_standar
 from utils.styles import inject_styles
-from utils.components import TOTAL_ROW_STYLE, auto_table_height, build_pivot, cleanup_selection
+from utils.components import TOTAL_ROW_STYLE, auto_table_height, build_pivot, cleanup_selection, render_nav_bar, render_footer
 from views import tab_claim, tab_goodwill
 
-st.set_page_config(page_title="Analisa Partnumber", page_icon="🔍", layout="wide")
+st.set_page_config(page_title="Analisa Partnumber", page_icon="🔍", layout="wide", initial_sidebar_state="collapsed")
+
+inject_styles()
 
 st.markdown(
     '<h1 style="color: white; text-align: center; font-size: 24px;">Analisa Partnumber</h1>',
     unsafe_allow_html=True
 )
-st.markdown("---")
 
-inject_styles()
+render_nav_bar("partnumber")
+
+st.caption(
+    "**Kelebaran** = Unique Partnumber &nbsp;|&nbsp; **Kedalaman** = Sum Qty &nbsp;|&nbsp; "
+    "**Claim** = Barang reject &nbsp;|&nbsp; **Goodwill** = Barang reject layak jual."
+)
 
 # ── Load Data (cuma butuh df_order) ──
 (df_order, df_supply, df_target, df_tmo_lookup, df_topt_lookup,
  df_chem_lookup, df_tgb_lookup, df_7kp_lookup, df_dprog_lookup, df_kalkerja,
- df_7kp_prefix) = load_and_process_data(compute_data_fingerprint())
+ df_7kp_prefix, _df_customer_master) = load_and_process_data(compute_data_fingerprint())
 
 if df_order is None or df_order.empty:
     st.warning("Data Order belum siap.")
@@ -298,14 +304,4 @@ with tab_claim_ui:
 with tab_goodwill_ui:
     tab_goodwill.render(df_supply)
 
-st.sidebar.markdown("### Analisa Partnumber")
-st.sidebar.caption(
-    "**Kelebaran** = Unique Partnumber  \n"
-    "**Kedalaman** = Sum Qty  \n"
-    "**Claim** = Barang reject  \n"
-    "**Goodwill** = Barang reject layak jual."
-)
-st.sidebar.divider()
-st.sidebar.caption("Built with Streamlit + Plotly | Updated (2026)")
-st.sidebar.caption("*Data isn't actual numbers, for display purposes only*")
-st.sidebar.caption("*Created by Ilham (2026)*")
+render_footer()

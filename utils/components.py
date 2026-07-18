@@ -8,6 +8,39 @@ import plotly.graph_objects as go
 from utils.data_loader import list_bulan_standar
 
 
+PAGE_REGISTRY = [
+    ("home", "🏠 Home", "Dashboard.py"),
+    ("financial", "📦 Laporan Financial", "pages/01_Laporan_Financial.py"),
+    ("marketing", "📢 Marketing Program", "pages/02_Marketing_Program.py"),
+    ("partnumber", "🔍 Analisa Partnumber", "pages/3_Analisa_Partnumber.py"),
+    ("sdm", "👥 SDM", "pages/04_SDM.py"),
+    ("customer", "🤝 Customer", "pages/05_Customer.py"),
+]
+
+
+def render_nav_bar(current_key):
+    """Tombol pindah antar page (semua page selain current) + garis pembatas tebal di
+    bawahnya, ditaruh di bawah judul tiap halaman. Pengganti nav sidebar bawaan Streamlit
+    yang sekarang di-collapse default supaya layout konten lebih lebar.
+    """
+    others = [p for p in PAGE_REGISTRY if p[0] != current_key]
+    cols = st.columns(len(others))
+    for col, (key, label, path) in zip(cols, others):
+        with col:
+            if st.button(label, use_container_width=True, key=f"nav_{current_key}_{key}"):
+                st.switch_page(path)
+    st.markdown('<hr class="thick-divider">', unsafe_allow_html=True)
+
+
+def render_footer():
+    """Caption penutup halaman (dulu di sidebar) — dipindah ke bawah konten utama
+    karena sidebar filter sudah dihapus."""
+    st.divider()
+    st.caption("Built with Streamlit + Plotly | Updated (2026)")
+    st.caption("*Data isn't actual numbers, for display purposes only*")
+    st.caption("*Created by Ilham (2026)*")
+
+
 def render_tile_filter(label, options, key, format_func=None, show_select_all=True):
     """Filter tile (st.pills multi-select) dengan checkbox "Pilih Semua" opsional,
     supaya user tidak perlu klik satu-satu saat pilihannya banyak (7KP, Item D, TMO,
@@ -24,22 +57,35 @@ def render_tile_filter(label, options, key, format_func=None, show_select_all=Tr
     session_state yang sudah tidak valid untuk daftar baru, sehingga filter tampak
     kosong dan tab tidak menampilkan data sama sekali saat dibuka.
 
+    Uncheck "Pilih Semua" mengosongkan seleksi (bukan mempertahankan semua-terpilih) —
+    supaya pilih 1-2 item dari opsi yang banyak (mis. cuma Cabang Jakarta dari 40+ cabang)
+    tinggal uncheck lalu klik yang diinginkan, bukan uncheck satu-satu item yang tidak
+    diinginkan. Pengosongan cuma terjadi SEKALI di momen transisi checked→unchecked
+    (dilacak lewat `{key}_selectall_prev`), supaya klik pill berikutnya oleh user tidak
+    ke-reset lagi di rerun selanjutnya selama checkbox tetap unchecked.
+
     show_select_all=False menyembunyikan checkbox-nya (mis. filter dengan opsi sedikit
     yang tidak butuh shortcut pilih-semua).
     """
     sig_key = f"{key}_sig"
     cb_key = f"{key}_selectall"
+    prev_cb_key = f"{key}_selectall_prev"
     options_sig = tuple(options)
     if st.session_state.get(sig_key) != options_sig:
         st.session_state[key] = options
         if show_select_all:
             st.session_state[cb_key] = True
+            st.session_state[prev_cb_key] = True
         st.session_state[sig_key] = options_sig
 
     if show_select_all:
         all_selected = st.checkbox(f"**{label}** — Pilih Semua", value=True, key=cb_key)
+        was_selected = st.session_state.get(prev_cb_key, True)
         if all_selected:
             st.session_state[key] = options  # set sebelum st.pills() di bawah dibuat
+        elif was_selected and not all_selected:
+            st.session_state[key] = []  # transisi checked->unchecked: kosongkan sekali
+        st.session_state[prev_cb_key] = all_selected
     else:
         st.markdown(f"**{label}**")
 
@@ -313,6 +359,273 @@ def classify_claim_goodwill(df_supply):
     return df_claim, df_goodwill
 
 
+def compute_customer_yoy(df_supply_final, pilih_tahun):
+    """Bandingkan Actual per Customer_No antara pilih_tahun vs pilih_tahun-1, dipakai bareng
+    oleh tab Retention/Churn & Alert Penurunan di page Customer.
+
+    `df_supply_final` sudah termasuk 2 tahun (current + LY) — bawaan dari render_top_filters()
+    (utils/filters.py) — dan sudah difilter Bulan/Area/Cabang/Jenis/Kelas dari Filter General,
+    jadi retention di sini otomatis ikut scope bulan yang dipilih (mis. kalau user cuma pilih
+    Q1, perbandingannya jadi "Q1 tahun ini vs Q1 tahun lalu", bukan setahun penuh).
+
+    Return DataFrame per Customer_No dengan kolom Customer_Name, Cabang, Last_Year, This_Year,
+    Pct_Change, dan Status (Churned/New/Retained) — Pct_Change/Status dihitung dari Last_Year
+    vs This_Year, bukan revenue absolut, jadi konsisten dipakai untuk kedua tab.
+    """
+    cols = ["Customer_No", "Customer_Name", "Cabang", "Last_Year", "This_Year", "Pct_Change", "Status"]
+    if df_supply_final is None or df_supply_final.empty:
+        return pd.DataFrame(columns=cols)
+
+    df = df_supply_final.copy()
+    df["Customer_No"] = df["Customer_No"].astype(str).str.upper().str.strip()
+    df["Customer_Name"] = df["Customer_Name"].astype(str).str.strip().str.upper()
+
+    agg = df.groupby(["Customer_No", "Tahun"])["Actual"].sum().reset_index()
+    pivot = agg.pivot(index="Customer_No", columns="Tahun", values="Actual").fillna(0)
+    pivot = pivot.rename(columns={pilih_tahun - 1: "Last_Year", pilih_tahun: "This_Year"})
+    for col in ("Last_Year", "This_Year"):
+        if col not in pivot.columns:
+            pivot[col] = 0.0
+    pivot = pivot[["Last_Year", "This_Year"]].reset_index()
+
+    lookup = df.drop_duplicates("Customer_No")[["Customer_No", "Customer_Name", "Cabang"]]
+    result = pivot.merge(lookup, on="Customer_No", how="left")
+
+    result["Pct_Change"] = np.where(
+        result["Last_Year"] > 0,
+        (result["This_Year"] - result["Last_Year"]) / result["Last_Year"] * 100,
+        np.where(result["This_Year"] > 0, 100.0, 0.0),
+    )
+    result["Status"] = np.select(
+        [
+            (result["Last_Year"] > 0) & (result["This_Year"] <= 0),
+            (result["Last_Year"] <= 0) & (result["This_Year"] > 0),
+            (result["Last_Year"] > 0) & (result["This_Year"] > 0),
+        ],
+        ["Churned", "New", "Retained"],
+        default="Tidak Aktif",
+    )
+    return result[cols]
+
+
+def compute_reactivation_candidates(df_customer_master, df_supply_final, df_supply_raw, pilih_tahun,
+                                     pilih_jenis, pilih_kelas, pilih_area, pilih_cabang):
+    """Cari customer berstatus AKTIF di master (Customer.xlsx) tapi 0 transaksi di kedua tahun
+    (Last_Year & This_Year) pada scope Filter General yang sama dipakai compute_customer_yoy —
+    beda dari 'Churned' di tab Retention yang mensyaratkan Last_Year>0, jadi ini nangkep customer
+    yang sudah lama hilang dari radar YoY (2 tahun) tapi statusnya belum diupdate jadi TIDAK AKTIF.
+
+    Last_Transaction diambil dari df_supply_raw (semua tahun yang ke-load, TANPA filter Bulan)
+    murni buat konteks/prioritas reaktivasi — bukan penentu status AKTIF/TIDAK, supaya customer
+    yang terakhir beli 2023 tetap kelihatan "sudah berapa lama" dibanding yang baru berhenti.
+    """
+    cols = ["Kode_Customer", "Nama_Customer", "Cabang", "Jenis_Customer", "Kelas_Customer", "Last_Transaction"]
+    if df_customer_master is None or df_customer_master.empty:
+        return pd.DataFrame(columns=cols)
+
+    scope = df_customer_master[
+        (df_customer_master["Status"] == "AKTIF")
+        & df_customer_master["Jenis_Customer"].isin(pilih_jenis)
+        & df_customer_master["Kelas_Customer"].isin(pilih_kelas)
+        & df_customer_master["Kode_Area"].isin(pilih_area)
+        & df_customer_master["Cabang"].isin(pilih_cabang)
+    ].copy()
+    if scope.empty:
+        return pd.DataFrame(columns=cols)
+
+    if df_supply_final is not None and not df_supply_final.empty:
+        agg = df_supply_final.groupby(["Customer_No", "Tahun"])["Actual"].sum().reset_index()
+        pivot = agg.pivot(index="Customer_No", columns="Tahun", values="Actual").fillna(0)
+        pivot = pivot.rename(columns={pilih_tahun - 1: "Last_Year", pilih_tahun: "This_Year"})
+        for col in ("Last_Year", "This_Year"):
+            if col not in pivot.columns:
+                pivot[col] = 0.0
+        pivot = pivot[["Last_Year", "This_Year"]].reset_index()
+    else:
+        pivot = pd.DataFrame(columns=["Customer_No", "Last_Year", "This_Year"])
+
+    merged = scope.merge(pivot, left_on="Kode_Customer", right_on="Customer_No", how="left")
+    merged["Last_Year"] = merged["Last_Year"].fillna(0)
+    merged["This_Year"] = merged["This_Year"].fillna(0)
+
+    candidates = merged[(merged["Last_Year"] <= 0) & (merged["This_Year"] <= 0)].copy()
+    if candidates.empty:
+        return pd.DataFrame(columns=cols)
+
+    if df_supply_raw is not None and not df_supply_raw.empty:
+        raw = df_supply_raw.copy()
+        raw["Customer_No"] = raw["Customer_No"].astype(str).str.upper().str.strip()
+        last_trans = raw.groupby("Customer_No")["Invoice_Date"].max()
+        candidates["Last_Transaction"] = candidates["Kode_Customer"].map(last_trans)
+    else:
+        candidates["Last_Transaction"] = pd.NaT
+
+    candidates = candidates.sort_values("Last_Transaction", ascending=False, na_position="last")
+    return candidates[cols]
+
+
+def compute_odom_status(df_order_final, df_kalkerja, pilih_tahun, pilih_bulan, ambang_bulanan=30_000_000, ambang_hari_aktif=50.0):
+    """ODOM (One Million One Day) — customer sehat kalau Order-nya rutin ≥Rp1 juta/hari
+    (~Rp30 juta/bulan). Basisnya ORDER (bukan Actual/Supply), dan scope Bulan/Tahun ikut
+    Filter General (kalau user pilih beberapa Bulan sekaligus, ambang bulanan & Hari Kerja
+    ikut dikali/dijumlah sesuai jumlah Bulan yang dipilih, bukan cuma 1 bulan).
+
+    Status:
+      - Belum ODOM: total Order di scope ini < ambang bulanan (dikali jumlah Bulan dipilih).
+      - ODOM Bolong-bolong: lolos ambang total, tapi hari aktifnya (hari ada Order >0)
+        kurang dari `ambang_hari_aktif`% dibanding Hari Kerja di scope ini — order numpuk
+        di sedikit hari, bukan rutin harian.
+      - ODOM Lancar: lolos ambang total DAN hari aktifnya cukup tersebar.
+    """
+    cols = ["Customer_No", "Customer_Name", "Cabang", "Total_Order", "Hari_Aktif", "Hari_Kerja", "Rasio_Aktif", "Status"]
+    if df_order_final is None or df_order_final.empty:
+        return pd.DataFrame(columns=cols)
+
+    df = df_order_final.copy()
+    df["Customer_No"] = df["Customer_No"].astype(str).str.upper().str.strip()
+    df["Customer_Name"] = df["Customer_Name"].astype(str).str.strip().str.upper()
+    df["Tanggal"] = df["SO_Date"].dt.date
+
+    total_order = df.groupby("Customer_No")["Order"].sum()
+    # Hari Aktif cuma dihitung dari baris yang Order-nya beneran positif — baris retur/qty 0
+    # (ada meski kecil jumlahnya di data) gak boleh ikut dianggap "hari order" sungguhan,
+    # soalnya bisa nge-gelembungin Rasio_Aktif customer yang order-nya jarang tapi punya
+    # beberapa baris retur tersebar di banyak tanggal.
+    hari_aktif = df[df["Order"] > 0].groupby("Customer_No")["Tanggal"].nunique()
+    lookup = df.drop_duplicates("Customer_No")[["Customer_No", "Customer_Name", "Cabang"]]
+
+    hari_kerja_scope = df_kalkerja[(df_kalkerja["Tahun"] == pilih_tahun) & (df_kalkerja["Bulan"].isin(pilih_bulan))]
+    hari_kerja_total = hari_kerja_scope["Hari_Kerja"].sum()
+    n_bulan = len(pilih_bulan) if pilih_bulan else 1
+
+    result = lookup.copy()
+    result["Total_Order"] = result["Customer_No"].map(total_order).fillna(0)
+    result["Hari_Aktif"] = result["Customer_No"].map(hari_aktif).fillna(0).astype(int)
+    result["Hari_Kerja"] = hari_kerja_total
+    result["Rasio_Aktif"] = np.where(hari_kerja_total > 0, result["Hari_Aktif"] / hari_kerja_total * 100, 0.0)
+
+    ambang_total = ambang_bulanan * n_bulan
+    result["Status"] = np.select(
+        [
+            result["Total_Order"] < ambang_total,
+            result["Rasio_Aktif"] < ambang_hari_aktif,
+        ],
+        ["Belum ODOM", "ODOM Bolong-bolong"],
+        default="ODOM Lancar",
+    )
+    return result[cols]
+
+
+def render_topn_barh_chart(df, label_col, value_col, top_n, color, value_fmt, xaxis_title, key, extra_hover_cols=None):
+    """Horizontal bar chart Top-N (mis. Top 10 Salesman/Cabang berdasar 1 metrik), sorted
+    menurun. Pola sama dipakai di beberapa tempat (dulu ditulis langsung di tab_gebyur.py
+    buat Top 7 Cabang) — diekstrak ke sini supaya Salesman Leaderboard & Cabang Scorecard
+    bisa pakai chart yang konsisten tanpa duplikasi.
+
+    `extra_hover_cols` opsional: list of (kolom, label, formatter) yang ditambahkan sebagai
+    baris tambahan di tooltip hover saja (mis. %Kontribusi Nasional/Cabang di Salesman
+    Leaderboard) — tidak mengubah teks yang tampil permanen di atas bar.
+    """
+    top = df.nlargest(top_n, value_col)
+    if top.empty:
+        st.info("Tidak ada data untuk chart.")
+        return
+
+    def _hovertext(row):
+        lines = [f"<b>{row[label_col]}</b>", value_fmt(row[value_col])]
+        if extra_hover_cols:
+            lines += [f"{label}: {fmt(row[col])}" for col, label, fmt in extra_hover_cols]
+        return "<br>".join(lines)
+
+    fig = go.Figure(go.Bar(
+        x=top[value_col], y=top[label_col], orientation="h",
+        marker_color=color,
+        text=[value_fmt(v) for v in top[value_col]],
+        textposition="auto",
+        textfont=dict(color="#f8fafc", size=13),
+        hovertext=[_hovertext(row) for _, row in top.iterrows()],
+        hovertemplate="%{hovertext}<extra></extra>",
+    ))
+    fig.update_layout(
+        height=70 + (len(top) * 48),
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+        xaxis=dict(title=dict(text=xaxis_title, font=dict(color="white", size=14)), tickfont=dict(color="white", size=12), gridcolor="#333333"),
+        yaxis=dict(tickfont=dict(color="white", size=13), autorange="reversed"),
+        margin=dict(l=10, r=30, t=20, b=10),
+        showlegend=False,
+    )
+    st.plotly_chart(fig, use_container_width=True, key=key)
+
+
+def render_bidirectional_barh_chart(df, label_col, left_col, right_col, left_name, right_name,
+                                     left_color, right_color, value_fmt, key,
+                                     xaxis_title=None, left_hover_extra=None, right_hover_extra=None):
+    """Bar chart horizontal 2 arah dari titik tengah 0 — 1 metrik ke kiri (mis. Order), metrik
+    lain ke kanan (mis. Actual), berbagi 1 sumbu magnitude yang sama (dicerminkan, bukan
+    dual-axis) supaya 2 metrik per kategori langsung kebandingin panjang bar-nya. `df` sudah
+    harus dalam urutan tampil yang diinginkan (mis. hasil nlargest) — fungsi ini tidak
+    mengurutkan ulang.
+    """
+    if df.empty:
+        st.info("Tidak ada data untuk chart.")
+        return
+
+    raw_max = max(df[left_col].max(), df[right_col].max())
+    raw_max = raw_max if raw_max > 0 else 1.0
+    # Gap kosong di tengah (sekitar sumbu 0) — bukan buat spacing kosmetik, tapi reserved
+    # space biar nama kategori (mis. Salesman) bisa ditaruh di tengah row, di antara 2 bar,
+    # alih-alih numpuk di y-axis kiri seperti bar chart 1 arah biasa.
+    gap = raw_max * 0.16
+    outer_max = raw_max * 1.15 + gap
+
+    def _hovertext(row, col, extra_cols):
+        lines = [f"<b>{row[label_col]}</b>", value_fmt(row[col])]
+        if extra_cols:
+            lines += [f"{label}: {fmt(row[c])}" for c, label, fmt in extra_cols]
+        return "<br>".join(lines)
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=-df[left_col], y=df[label_col], base=-gap, orientation="h", name=left_name,
+        marker_color=left_color,
+        text=[value_fmt(v) for v in df[left_col]],
+        textposition="auto", textfont=dict(color="#f8fafc", size=12),
+        hovertext=[_hovertext(row, left_col, left_hover_extra) for _, row in df.iterrows()],
+        hovertemplate="%{hovertext}<extra></extra>",
+    ))
+    fig.add_trace(go.Bar(
+        x=df[right_col], y=df[label_col], base=gap, orientation="h", name=right_name,
+        marker_color=right_color,
+        text=[value_fmt(v) for v in df[right_col]],
+        textposition="auto", textfont=dict(color="#f8fafc", size=12),
+        hovertext=[_hovertext(row, right_col, right_hover_extra) for _, row in df.iterrows()],
+        hovertemplate="%{hovertext}<extra></extra>",
+    ))
+
+    for _, row in df.iterrows():
+        fig.add_annotation(
+            x=0, y=row[label_col], xref="x", yref="y", xanchor="center", yanchor="middle",
+            text=f"<b>{row[label_col]}</b>", showarrow=False,
+            font=dict(color="#f8fafc", size=12),
+        )
+
+    fig.update_layout(
+        barmode="overlay",
+        height=70 + (len(df) * 48),
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+        xaxis=dict(
+            title=dict(text=xaxis_title, font=dict(color="white", size=14)) if xaxis_title else None,
+            showticklabels=False, showgrid=False, zeroline=False,
+            range=[-outer_max, outer_max],
+        ),
+        yaxis=dict(showticklabels=False, autorange="reversed"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, font=dict(color="white", size=13)),
+        hoverlabel=dict(bgcolor="#1e293b", font_color="white", font_size=13),
+        margin=dict(l=10, r=30, t=50, b=10),
+    )
+    st.plotly_chart(fig, use_container_width=True, key=key)
+
+
 def render_qty_heatmap(df, value_col, group_col="Cabang", month_col="Bulan", key="heatmap"):
     """Heatmap SEMUA Cabang (tidak dibatasi top-N) untuk 1 metrik Qty, pakai skema warna
     oranye single-hue yang sama seperti render_burn_rate_heatmap — biar konsisten secara
@@ -533,13 +846,16 @@ def render_trend_chart_and_table(m_ly, m_ord, m_sup, pilih_tahun, pilih_bulan, h
 
 def render_value_breakdown(df, value_col, key_prefix, fmt_cell=None, subj_options=None):
     """Breakdown 1 value_col (Volume/Order/Qty/Profit) per Cabang/Customer/Salesman, dalam
-    SATU pivot table yang bisa switch dimensi + filter Area + search box (mode Customer/Salesman).
+    SATU pivot table yang bisa switch dimensi + search box (mode Customer/Salesman).
 
     `df` harus dataframe yang sudah difilter kategori/jenis oleh tab pemanggil, dan minimal
-    punya kolom: Cabang, Kode_Area, Bulan, Bulan_Num, plus Customer_No/Customer_Name (mode
+    punya kolom: Cabang, Bulan, Bulan_Num, plus Customer_No/Customer_Name (mode
     Customer) atau Salesman_Name (mode Salesman) sesuai subj_options yang dipakai.
     fmt_cell: formatter angka di sel tabel (default ribuan biasa, bisa diisi fmt_rp/fmt_liter dst).
     subj_options: daftar dimensi yang bisa dipilih (default ["Cabang", "Customer"]).
+
+    Tidak ada filter Area di sini (sengaja dihapus) — Area sudah bisa difilter dari Filter
+    General di atas tab, jadi tidak perlu duplikat kontrolnya di tiap breakdown.
     """
     if df is None or df.empty:
         st.info("Tidak ada data untuk breakdown.")
@@ -551,13 +867,8 @@ def render_value_breakdown(df, value_col, key_prefix, fmt_cell=None, subj_option
     col1, col2 = st.columns(2)
     with col1:
         subj_dim = st.selectbox("Breakdown per", subj_options, key=f"breakdown_dim_{key_prefix}")
-    with col2:
-        area_options = sorted(df["Kode_Area"].dropna().unique().tolist()) if "Kode_Area" in df.columns else []
-        area_key = f"breakdown_area_{key_prefix}"
-        cleanup_selection(area_key, area_options)
-        pilih_area = st.multiselect("Filter Area", area_options, key=area_key, placeholder="Semua (klik untuk filter)")
 
-    df_scope = df[df["Kode_Area"].isin(pilih_area)] if pilih_area else df
+    df_scope = df
 
     if subj_dim == "Cabang":
         subj_col = "Cabang"
@@ -565,14 +876,16 @@ def render_value_breakdown(df, value_col, key_prefix, fmt_cell=None, subj_option
         df_scope = df_scope.copy()
         df_scope["Salesman_Label"] = df_scope["Salesman_Name"].astype(str).str.strip().str.upper()
         subj_col = "Salesman_Label"
-        search_kw = st.text_input("Cari Salesman", key=f"breakdown_search_{key_prefix}")
+        with col2:
+            search_kw = st.text_input("Cari Salesman", key=f"breakdown_search_{key_prefix}")
         if search_kw.strip():
             df_scope = df_scope[df_scope[subj_col].str.contains(search_kw.strip(), case=False, na=False)]
     else:
         df_scope = df_scope.copy()
         df_scope["Customer_Label"] = df_scope["Customer_No"].astype(str) + " - " + df_scope["Customer_Name"].astype(str).str.strip().str.upper()
         subj_col = "Customer_Label"
-        search_kw = st.text_input("Cari Customer (nama/kode)", key=f"breakdown_search_{key_prefix}")
+        with col2:
+            search_kw = st.text_input("Cari Customer (nama/kode)", key=f"breakdown_search_{key_prefix}")
         if search_kw.strip():
             df_scope = df_scope[df_scope[subj_col].str.contains(search_kw.strip(), case=False, na=False)]
 

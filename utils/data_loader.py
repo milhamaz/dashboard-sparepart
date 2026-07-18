@@ -40,6 +40,7 @@ SUPPLY_SKIP_COLS = [
 
 CUSTOMER_FILE = BASE_DIR / "Customer.xlsx"
 CUSTOMER_COLS = ["Kode_Customer", "Jenis_Customer", "Kelas_Customer", "Cabang", "Kode_Area"]
+CUSTOMER_MASTER_COLS = ["Kode_Customer", "Nama_Customer", "Jenis_Customer", "Kelas_Customer", "Cabang", "Kode_Area", "Status"]
 
 TARGET_FILE = BASE_DIR / "Tgt_Cabang.xlsx"
 TARGET_COLS = ["Tahun", "Bulan_Num", "Bulan", "Code_Cabang", "Cabang", "Target"]
@@ -68,6 +69,16 @@ KELAS_MARGIN_RANGE = {
 }
 # Cabang dengan rule margin sendiri (di luar sistem Kelas A-E)
 CABANG_MARGIN_RANGE = {"JAKARTA": (6.5, 7.1), "MEDAN": (6.8, 7.3)}
+
+
+@st.cache_data
+def load_kelas_cabang():
+    """Kelas Cabang (A-E) — dipakai terpisah dari load_and_process_data() karena cuma
+    dibutuhkan target_engine.py (fitur cascade Target Cabang->Customer->Salesman), gak
+    perlu ikut nambahin tuple besar yang di-unpack di 5 halaman lain."""
+    df = pd.read_excel(KELAS_CABANG_FILE, engine="openpyxl")
+    df.columns = df.columns.str.strip().str.replace(" ", "_")
+    return df
 
 
 def compute_data_fingerprint():
@@ -106,9 +117,18 @@ def load_and_process_data(fingerprint):
     df_order = load_csvs(ORDER_DIR, "O", 2024, skip_cols=ORDER_SKIP_COLS)
     df_supply = load_csvs(SUPPLY_DIR, "S", 2023, skip_cols=SUPPLY_SKIP_COLS)
 
-    df_customer = pd.read_excel(CUSTOMER_FILE, engine="openpyxl")
-    df_customer.columns = df_customer.columns.str.strip().str.replace(" ", "_")
-    df_customer = df_customer[CUSTOMER_COLS]
+    df_customer_raw = pd.read_excel(CUSTOMER_FILE, engine="openpyxl")
+    df_customer_raw.columns = df_customer_raw.columns.str.strip().str.replace(" ", "_")
+
+    # Master lengkap (semua customer terdaftar, termasuk yang 0 transaksi) — dipakai buat
+    # deteksi kandidat reaktivasi (AKTIF di master tapi ga muncul sama sekali di Supply),
+    # beda dari df_customer di bawah yang cuma buat merge atribut ke tiap baris transaksi.
+    df_customer_master = df_customer_raw[CUSTOMER_MASTER_COLS].copy()
+    df_customer_master["Kode_Customer"] = df_customer_master["Kode_Customer"].astype(str).str.upper().str.strip()
+    df_customer_master["Nama_Customer"] = df_customer_master["Nama_Customer"].astype(str).str.strip().str.upper()
+    df_customer_master["Status"] = df_customer_master["Status"].astype(str).str.strip().str.upper()
+
+    df_customer = df_customer_raw[CUSTOMER_COLS].copy()
     df_customer["Kode_Customer"] = df_customer["Kode_Customer"].astype(str).str.upper().str.strip()
 
     df_target = pd.read_excel(TARGET_FILE, engine="openpyxl")
@@ -258,4 +278,4 @@ def load_and_process_data(fingerprint):
     df_supply["Pct_Profit_Margin"] = np.where(df_supply["Net_Sales"] != 0, df_supply["Profit"] / df_supply["Net_Sales"] * 100, 0)
     df_supply = df_supply.drop(columns=["Margin_Low", "Margin_High"])
 
-    return df_order, df_supply, df_target, df_tmo_lookup, df_topt_lookup, df_chem_lookup, df_tgb_lookup, df_7kp_lookup, df_dprog_lookup, df_kalkerja, df_7kp_prefix
+    return df_order, df_supply, df_target, df_tmo_lookup, df_topt_lookup, df_chem_lookup, df_tgb_lookup, df_7kp_lookup, df_dprog_lookup, df_kalkerja, df_7kp_prefix, df_customer_master

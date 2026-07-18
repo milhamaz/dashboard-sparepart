@@ -2,19 +2,24 @@
 # 📊 DASHBOARD SPAREPART — MAIN ENTRY POINT (MULTIPAGE)
 # ============================================================
 import streamlit as st
+from utils.styles import inject_styles
+from utils.components import render_footer
 
 st.set_page_config(
     page_title="Dashboard Sparepart",
     page_icon="🚗",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="collapsed",
 )
+
+inject_styles()
 
 st.markdown(
     '<h1 style="color: white; text-align: center; font-size: 28px;">Dashboard Sparepart</h1>',
     unsafe_allow_html=True
 )
 
-st.markdown("---")
+st.markdown('<hr class="thick-divider">', unsafe_allow_html=True)
 
 col1, col2, col3 = st.columns(3)
 
@@ -64,8 +69,34 @@ with b3:
     if st.button("Buka Analisa Partnumber", use_container_width=True):
         st.switch_page("pages/3_Analisa_Partnumber.py")
 
-st.sidebar.markdown("### Home")
-st.sidebar.divider()
-st.sidebar.caption("Built with Streamlit + Plotly | Updated (2026)")
-st.sidebar.caption("*Data isn't actual numbers, for display purposes only*")
-st.sidebar.caption("*Created by Ilham (2026)*")
+col4, col5 = st.columns(2)
+
+with col4:
+    st.markdown("""
+    ### SDM
+    Performa internal perusahaan — orang & cabang:
+    - **Salesman Leaderboard** — ranking Actual & growth YoY per salesman
+    - **Cabang Scorecard** — achievement semua cabang vs target, satu tabel
+    &nbsp;
+    &nbsp;
+    """)
+
+with col5:
+    st.markdown("""
+    ### Customer
+    Performa eksternal — kesehatan basis customer:
+    - **Retention & Churn** — customer bertahan/hilang/baru YoY
+    - **Alert Penurunan** — customer aktif dengan penurunan signifikan
+    &nbsp;
+    &nbsp;
+    """)
+
+b4, b5 = st.columns(2)
+with b4:
+    if st.button("Buka SDM", use_container_width=True):
+        st.switch_page("pages/04_SDM.py")
+with b5:
+    if st.button("Buka Customer", use_container_width=True):
+        st.switch_page("pages/05_Customer.py")
+
+render_footer()

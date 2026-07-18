@@ -4,60 +4,27 @@
 import streamlit as st
 
 from utils.components import (
-    append_total_row, cleanup_selection, render_card, render_styled_table, render_value_breakdown,
+    append_total_row, render_card, render_styled_table, render_value_breakdown,
 )
-
-FMT_RP = lambda x: f"Rp {x:,.0f}".replace(",", ".")
-
-
-def _highlight_profit_pct(val):
-    """Hijau kalau margin >=0%, merah kalau minus — beda dari highlight_pct standar
-    (utils/styles.py) yang threshold-nya di 100% buat rasio A/LY, bukan cocok buat margin."""
-    color = "#10b981" if val >= 0 else "#ef4444"
-    return f"color: {color}; font-weight: bold;"
+from utils.styles import fmt_rp_full as FMT_RP, highlight_growth_pct as _highlight_profit_pct
 
 
-def render(df_supply):
-    if df_supply is None or df_supply.empty:
+def render(df_supply_final, pilih_tahun):
+    """Tidak ada filter Area sendiri di sini (sengaja dihapus) — dipakai langsung
+    df_supply_final yang sudah difilter Filter General di atas tab (Bulan/Area/Cabang/
+    Jenis/Kelas Customer), supaya tidak duplikat kontrol dengan Filter General. Tahun TETAP
+    difilter manual di bawah karena df_supply_final dari render_top_filters() selalu
+    mencakup 2 tahun sekaligus (current + last year, buat keperluan YoY di tab lain) — tanpa
+    ini Net Sales/COGS/Profit di sini kehitung dobel (2 tahun ketumpuk jadi satu angka).
+    """
+    if df_supply_final is None or df_supply_final.empty:
         st.warning("Data Supply belum siap.")
         return
-    if "Profit" not in df_supply.columns:
+    if "Profit" not in df_supply_final.columns:
         st.warning("Kolom Profit belum tersedia — cek konfigurasi COGS di utils/data_loader.py.")
         return
 
-    st.caption(
-        "Estimasi COGS & Profit — data pembelian TASTI ke Toyota (Modal asli) tidak bisa ditarik "
-        "bulk, jadi di-estimasi: **Net Sales** pakai Discount asli (TASTI → Customer), **COGS** pakai "
-        "simulasi diskon Toyota → TASTI (TMO = fixed 44%, selain itu = Discount asli + margin acak "
-        "sesuai Cabang/Kelas Cabang). **Profit = Net Sales − COGS**, bisa minus (terutama TMO kalau "
-        "diskon customer melebihi 44%). **% Profit** = Profit/Gross Sales, **% Profit Margin** = Profit/Net Sales."
-    )
-
-    tahun_list = sorted(df_supply["Tahun"].dropna().unique().tolist())
-    if not tahun_list:
-        st.info("Belum ada data Supply.")
-        return
-    tahun_terbaru = tahun_list[-1]
-
-    col_tahun, col_area = st.columns(2)
-    with col_tahun:
-        tahun_options = [str(t) for t in tahun_list]
-        pilih_tahun_raw = st.pills(
-            "Pilih Tahun", tahun_options, selection_mode="single",
-            default=str(tahun_terbaru), key="cogs_tahun",
-        )
-    pilih_tahun = int(pilih_tahun_raw) if pilih_tahun_raw else tahun_terbaru
-
-    area_options = sorted(df_supply["Kode_Area"].dropna().unique().tolist())
-    area_key = "cogs_area"
-    cleanup_selection(area_key, area_options)
-    with col_area:
-        pilih_area = st.pills("Filter Area (slicer)", area_options, selection_mode="multi", key=area_key) or []
-
-    df_scope = df_supply[df_supply["Tahun"] == pilih_tahun]
-    if pilih_area:
-        df_scope = df_scope[df_scope["Kode_Area"].isin(pilih_area)]
-
+    df_scope = df_supply_final[df_supply_final["Tahun"] == pilih_tahun]
     if df_scope.empty:
         st.info(f"Tidak ada data untuk tahun {pilih_tahun}.")
         return

@@ -30,8 +30,8 @@ def render(df_order, df_target, df_kalkerja):
         return
     tahun_terbaru = tahun_list[-1]
 
-    # ── Filter baris 1: Tahun, Bulan, Area (opsional) — di atas chart, bukan sidebar ──
-    col_tahun, col_bulan, col_area = st.columns(3)
+    # ── Filter baris 1: Tahun (1/3), Bulan (2/3) — di atas chart, bukan sidebar ──
+    col_tahun, col_bulan = st.columns([1, 2])
 
     with col_tahun:
         tahun_options = [str(t) for t in tahun_list]
@@ -54,15 +54,8 @@ def render(df_order, df_target, df_kalkerja):
     pilih_bulan = pilih_bulan_raw if pilih_bulan_raw else bulan_default
     bulan_num = list_bulan_standar.index(pilih_bulan) + 1
 
-    area_options = sorted(df_order["Kode_Area"].dropna().unique().tolist())
-    with col_area:
-        pilih_area = st.pills(
-            "Filter Area (opsional)", area_options, selection_mode="single", key="pacing_area",
-        )
-
     # ── Filter baris 2: Cabang — "Semua Cabang" = kumulatif seluruh cabang (default) ──
-    cabang_scope = df_order[df_order["Kode_Area"] == pilih_area] if pilih_area else df_order
-    cabang_options = ["Semua Cabang"] + sorted(cabang_scope["Cabang"].dropna().unique().tolist())
+    cabang_options = ["Semua Cabang"] + sorted(df_order["Cabang"].dropna().unique().tolist())
     cabang_key = "pacing_cabang"
     if st.session_state.get(cabang_key) not in cabang_options:
         st.session_state[cabang_key] = cabang_options[0]
