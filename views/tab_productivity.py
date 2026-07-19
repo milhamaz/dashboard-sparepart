@@ -2,11 +2,10 @@
 # 📈 TAB: PRODUCTIVITY
 # ============================================================
 import streamlit as st
-import pandas as pd
 
 from utils.data_loader import list_bulan_standar
-from utils.target_engine import compute_current_salesman, compute_salesman_order, compute_salesman_actual
-from utils.components import render_card, render_topn_barh_chart, auto_table_height
+from utils.productivity_engine import compute_productivity_df
+from utils.components import render_card, render_topn_barh_chart, render_bubble_chart, auto_table_height
 from utils.styles import fmt_rp_full as FMT_RP, highlight_pct as _highlight_pct, highlight_concentration_pct as _highlight_concentration
 
 _BULAN_NUM = {b: i + 1 for i, b in enumerate(list_bulan_standar)}
@@ -27,115 +26,24 @@ def render(df_order_raw, df_order_final, df_supply_final, df_customer_master, pi
         "Lihat Productivity berdasarkan", ["Cabang", "Salesman"], horizontal=True, key="productivity_subject",
     )
 
-    # Populasi customer sesuai Jenis/Kelas/Area di Filter General — dipakai buat menyaring
-    # customer_master (denominator Assigned_Customers) SUPAYA SEPADAN dengan df_order_final/
-    # df_supply_final (numerator), yang keduanya sudah kena filter dimensi ini juga.
-    customer_scope = df_customer_master[
-        df_customer_master["Jenis_Customer"].isin(pilih_jenis)
-        & df_customer_master["Kelas_Customer"].isin(pilih_kelas)
-        & df_customer_master["Kode_Area"].isin(pilih_area)
-    ]
-
-    sup_scope = df_supply_final[df_supply_final["Tahun"] == pilih_tahun].copy()
-
-    if subject == "Cabang":
-        # Resource = customer AKTIF (dalam scope Jenis/Kelas/Area) di master per Cabang —
-        # bukan cuma yang aktif transaksi periode ini, biar Cabang yang "nelantarin" sebagian
-        # besar portofolionya gak keliatan produktif cuma karena sisa akunnya sedikit.
-        assigned = (
-            customer_scope[customer_scope["Status"] == "AKTIF"]
-            .groupby("Cabang")["Kode_Customer"].nunique().rename("Assigned_Customers")
-        )
-        order_sum = df_order_final.groupby("Cabang")["Order"].sum().rename("Order") if not df_order_final.empty else pd.Series(dtype=float, name="Order")
-        actual_sum = sup_scope.groupby("Cabang")["Actual"].sum().rename("Actual")
-
-        df = assigned.to_frame().join(order_sum, how="left").join(actual_sum, how="left").fillna(0).reset_index()
-        df = df[df["Cabang"].isin(pilih_cabang) & (df["Assigned_Customers"] > 0)].copy()
-
-        cust_actual = sup_scope.groupby(["Cabang", "Customer_No"])["Actual"].sum().reset_index()
-        top1 = (
-            cust_actual.sort_values("Actual", ascending=False).drop_duplicates("Cabang")
-            .set_index("Cabang")["Actual"]
-        )
-        df["Top1_Actual"] = df["Cabang"].map(top1).fillna(0)
-
-        label_col, name_col = "Cabang", "Cabang"
-    else:
-        # Order/Actual Salesman dihitung dari histori Order MENTAH (compute_current_salesman
-        # butuh jangkauan Tahun lengkap), tapi tetap disaring dulu ke populasi customer yang
-        # sama dengan cabang Jenis/Kelas/Area di atas — konsisten dgn pola tab_target_salesman.py.
-        df_order_scope = df_order_raw[df_order_raw["Customer_No"].isin(customer_scope["Kode_Customer"])]
-
-        current_salesman = compute_current_salesman(df_order_scope, pilih_tahun, bulan_num_list)
-        if current_salesman.empty:
-            st.info("Tidak ada data Salesman untuk filter yang dipilih.")
-            return
-
-        cust_cabang = df_customer_master.set_index("Kode_Customer")["Cabang"]
-        current_salesman = current_salesman.copy()
-        current_salesman["Cabang"] = current_salesman["Customer_No"].map(cust_cabang)
-
-        assigned = current_salesman.groupby("Salesman_Code")["Customer_No"].nunique().rename("Assigned_Customers")
-        order_sum = compute_salesman_order(df_order_scope, pilih_tahun, bulan_num_list, current_salesman=current_salesman).set_index("Salesman_Code")["Order"]
-        actual_sum = compute_salesman_actual(df_supply_final, pilih_tahun, bulan_num_list, current_salesman).set_index("Salesman_Code")["Actual"]
-
-        name_map = current_salesman.drop_duplicates("Salesman_Code").set_index("Salesman_Code")["Salesman_Name"]
-        # Cabang "rumah" tiap Salesman = Cabang dengan customer assigned terbanyak — sebagian
-        # kecil Salesman ada yang pegang 1-2 customer nyasar di Cabang lain (data quirk yang
-        # sama dicatat di tab_salesman_leaderboard.py/target_engine.py).
-        dominant_cabang = (
-            current_salesman.groupby(["Salesman_Code", "Cabang"]).size().reset_index(name="n")
-            .sort_values("n", ascending=False).drop_duplicates("Salesman_Code")
-            .set_index("Salesman_Code")["Cabang"]
-        )
-
-        df = assigned.to_frame().join(order_sum.rename("Order"), how="left").join(actual_sum.rename("Actual"), how="left").fillna(0).reset_index()
-        df["Salesman_Name"] = df["Salesman_Code"].map(name_map)
-        df["Cabang"] = df["Salesman_Code"].map(dominant_cabang)
-        df = df[df["Cabang"].isin(pilih_cabang) & (df["Assigned_Customers"] > 0)].copy()
-
-        # df_supply punya kolom Salesman_Code sendiri (siapa yang proses transaksi historis),
-        # tapi itu BUKAN yang dipakai buat atribusi di sini — drop dulu biar gak nabrak nama
-        # kolom pas di-merge sama mapping "pemegang customer SAAT INI" dari current_salesman.
-        cust_by_salesman = sup_scope.drop(columns=["Salesman_Code"], errors="ignore").merge(
-            current_salesman[["Customer_No", "Salesman_Code"]], on="Customer_No", how="inner"
-        )
-        cust_totals = cust_by_salesman.groupby(["Salesman_Code", "Customer_No"])["Actual"].sum().reset_index()
-        top1 = (
-            cust_totals.sort_values("Actual", ascending=False).drop_duplicates("Salesman_Code")
-            .set_index("Salesman_Code")["Actual"]
-        )
-        df["Top1_Actual"] = df["Salesman_Code"].map(top1).fillna(0)
-
-        label_col, name_col = "Salesman_Name", "Salesman_Name"
+    df, label_col, name_col = compute_productivity_df(
+        df_order_raw, df_order_final, df_supply_final, df_customer_master,
+        pilih_tahun, bulan_num_list, pilih_jenis, pilih_kelas, pilih_area, pilih_cabang, subject,
+    )
 
     if df.empty:
         st.info("Tidak ada data untuk filter yang dipilih.")
         return
 
-    df["Productivity_Order"] = df["Order"] / df["Assigned_Customers"]
-    df["Productivity_Actual"] = df["Actual"] / df["Assigned_Customers"]
-    df["Top1_Concentration"] = (df["Top1_Actual"] / df["Actual"].replace(0, pd.NA) * 100).fillna(0.0)
-
-    # Relative Productivity — dibanding rata-rata Cabang sendiri (Salesman) atau rata-rata
-    # Nasional (Cabang). SENGAJA bukan dibagi Target/customer: (Actual/N)/(Target/N) = Actual/Target,
-    # N-nya kecoret habis dan itu cuma jadi Achievement% yang sudah ada di tab Target — bukan
-    # metrik baru.
-    if subject == "Cabang":
-        national_avg = df["Actual"].sum() / df["Assigned_Customers"].sum() if df["Assigned_Customers"].sum() > 0 else 0.0
-        df["Relative_Productivity"] = (df["Productivity_Actual"] / national_avg * 100) if national_avg > 0 else 0.0
-    else:
-        cabang_actual_sum = df.groupby("Cabang")["Actual"].transform("sum")
-        cabang_cust_sum = df.groupby("Cabang")["Assigned_Customers"].transform("sum")
-        cabang_avg_productivity = (cabang_actual_sum / cabang_cust_sum.replace(0, pd.NA)).fillna(0.0)
-        df["Relative_Productivity"] = (df["Productivity_Actual"] / cabang_avg_productivity.replace(0, pd.NA) * 100).fillna(0.0)
-
-    df = df.sort_values("Productivity_Actual", ascending=False).reset_index(drop=True)
-
     high_risk = (df["Top1_Concentration"] >= 50).sum()
-    low_n = (df["Assigned_Customers"] < _MIN_N_CUSTOMER).sum()
     avg_productivity = df["Productivity_Actual"].mean() if not df.empty else 0.0
     top_row = df.iloc[0]
+
+    # Kurang Produktif dihitung cuma dari subjek dengan sample MEMADAI (>=_MIN_N_CUSTOMER) —
+    # kalau dari seluruh df, hasilnya hampir pasti subjek 1-2 customer ber-Actual mepet 0
+    # (noise sample kecil, bukan sinyal underperform beneran).
+    reliable_df = df[df["Assigned_Customers"] >= _MIN_N_CUSTOMER]
+    bottom_row = reliable_df.sort_values("Productivity_Actual").iloc[0] if not reliable_df.empty else None
 
     c1, c2, c3, c4 = st.columns(4)
     with c1:
@@ -145,7 +53,25 @@ def render(df_order_raw, df_order_final, df_supply_final, df_customer_master, pi
     with c3:
         st.markdown(render_card("🚨", "Concentration Risk Tinggi", f"{high_risk}", "Top-1 customer ≥50% revenue"), unsafe_allow_html=True)
     with c4:
-        st.markdown(render_card("⚠️", "Sample Kecil", f"{low_n}", f"<{_MIN_N_CUSTOMER} customer assigned"), unsafe_allow_html=True)
+        if bottom_row is not None:
+            st.markdown(render_card("🐌", f"{subject} Kurang Produktif", bottom_row[label_col], f"{fmt_rp(bottom_row['Productivity_Actual'])}/customer"), unsafe_allow_html=True)
+        else:
+            st.markdown(render_card("🐌", f"{subject} Kurang Produktif", "-", f"tidak ada {subject.lower()} dengan ≥{_MIN_N_CUSTOMER} customer"), unsafe_allow_html=True)
+
+    st.markdown(f"#### Peta Productivity — {subject}")
+    st.caption(
+        "Tiap titik = 1 " + subject.lower() + ". Sumbu X = jumlah customer assigned, "
+        "sumbu Y = Productivity per Customer, besar bubble = Total Actual (revenue). "
+        "Titik kiri-atas (sedikit customer, Productivity tinggi) = ketergantungan ke akun "
+        "besar; titik kanan-bawah (banyak customer, Productivity sedang) = portofolio "
+        "tersebar. Merah = Concentration Risk tinggi (≥50%)."
+    )
+    render_bubble_chart(
+        df, label_col, x_col="Assigned_Customers", y_col="Productivity_Actual", size_col="Actual",
+        risk_col="Top1_Concentration", x_title="Jumlah Customer", y_title="Productivity per Customer (Rp)",
+        value_fmt=fmt_rp, key="chart_productivity_bubble",
+        extra_hover_cols=[("Top1_Customer", "Top-1 Customer", lambda v: v)],
+    )
 
     st.markdown(f"#### Top 10 {subject} — Productivity per Customer")
     top10 = df.nlargest(10, "Productivity_Actual")
@@ -197,5 +123,6 @@ def render(df_order_raw, df_order_final, df_supply_final, df_customer_master, pi
         "- **Productivity** = Order/Actual dibagi jumlah customer yang di-assign (bukan cuma yang aktif transaksi) — supaya subjek yang cuma mengandalkan sedikit akun besar tidak terlihat lebih \"produktif\" dari yang bekerja ke seluruh portofolionya.\n"
         "- **Relative Productivity (%)** = Productivity (Actual) dibanding rata-rata Cabang sendiri (untuk Salesman) atau rata-rata Nasional (untuk Cabang) — bukan dibanding Target, supaya bukan sekadar mengulang Achievement% yang sudah ada di tab Target.\n"
         "- **Top-1 Concentration (%)** = seberapa besar 1 customer terbesar menyumbang ke revenue subjek ini. ≥50% berarti kalau customer itu berhenti, lebih dari separuh revenue subjek ini ikut hilang.\n"
-        f"- **Sample Kecil** = subjek dengan <{_MIN_N_CUSTOMER} customer assigned — angka Productivity-nya gampang melenceng gara-gara 1-2 transaksi besar, baca hati-hati."
+        f"- **Sample Kecil** = subjek dengan <{_MIN_N_CUSTOMER} customer assigned — angka Productivity-nya gampang melenceng gara-gara 1-2 transaksi besar, baca hati-hati.\n"
+        f"- **{subject} Kurang Produktif** = Productivity (Actual) terendah, cuma dihitung dari subjek dengan sample memadai (≥{_MIN_N_CUSTOMER} customer) — supaya bukan sekadar subjek 1-2 customer ber-Actual mepet 0 yang muncul, tapi underperform beneran."
     )

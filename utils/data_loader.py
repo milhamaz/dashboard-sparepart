@@ -70,6 +70,14 @@ KELAS_MARGIN_RANGE = {
 # Cabang dengan rule margin sendiri (di luar sistem Kelas A-E)
 CABANG_MARGIN_RANGE = {"JAKARTA": (6.5, 7.1), "MEDAN": (6.8, 7.3)}
 
+# Konsolidasi Salesman_Code yang kepecah di raw data (migrasi/typo kode cabang di source
+# system) jadi 1 kode kanonik yang disepakati tim ops — supaya transaksi lama & baru tetap
+# ke-grouping sebagai 1 orang, bukan kepecah jadi beberapa baris di leaderboard/productivity.
+SALESMAN_CODE_ALIAS = {
+    "2C30-S2": "2C11-S13",   # FAIZ NUR ALAWY, kode lama sebelum konsolidasi murni ke Bogor
+    "2C10-S13": "2C11-S13",  # FAIZ NUR ALAWY, kode raw saat ini (2C10 typo dari Kode_Cabang asli 2C11/BOGOR di Customer master) — tetap dipetakan biar update raw data ke depan otomatis ke-cover
+}
+
 
 @st.cache_data
 def load_kelas_cabang():
@@ -272,8 +280,14 @@ def _merge_and_finalize(fingerprint, _df_order, _df_supply, _df_customer, _df_ta
     
     # 🔄 [FIX 5-6] Loop untuk upper & strip Partnumber pada Data Transaksi (Order & Supply)
     for df in [df_order, df_supply]:
-        if "Partnumber" in df.columns: 
+        if "Partnumber" in df.columns:
             df["Partnumber"] = df["Partnumber"].astype(str).str.upper().str.strip()
+
+    # Terapkan SALESMAN_CODE_ALIAS supaya Salesman_Code yang kepecah di raw data ke-konsolidasi
+    # sebelum dipakai groupby manapun (target_engine.py, tab_productivity.py, tab_salesman_leaderboard.py).
+    for df in [df_order, df_supply]:
+        if "Salesman_Code" in df.columns:
+            df["Salesman_Code"] = df["Salesman_Code"].astype(str).str.strip().replace(SALESMAN_CODE_ALIAS)
 
     # Ensure Scp_Disc column exists and is numeric (for Item D burn calculation)
     if "Scp_Disc" in df_order.columns:

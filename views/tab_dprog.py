@@ -7,9 +7,10 @@ from utils.components import (
     compute_item_d_burn, hitung_aly, render_card, render_styled_table, append_total_row,
     trim_future_months, render_tile_filter, render_burn_rate_heatmap,
 )
+from utils.styles import highlight_burn_rate_pct, fmt_rp_full
 
 
-def render(df_order_final, df_supply_final, df_dprog_lookup, pilih_tahun, pilih_bulan, fmt_rp, highlight_pct):
+def render(df_order_final, df_supply_final, df_dprog_lookup, pilih_tahun, pilih_bulan, fmt_rp):
     if df_dprog_lookup is None or df_dprog_lookup.empty or "Partnumber" not in df_dprog_lookup.columns:
         st.warning("Data master PnoDProg.xlsx belum siap atau kolom 'Partnumber' tidak ditemukan.")
         return
@@ -79,10 +80,10 @@ def render(df_order_final, df_supply_final, df_dprog_lookup, pilih_tahun, pilih_
         })
 
         render_styled_table(
-            display, highlight_pct, pct_cols=[],
+            display, highlight_burn_rate_pct, pct_cols=["Burn Rate (%)"],
             fmt_dict={
-                "Revenue (Rp)": lambda x: f"Rp {x:,.0f}".replace(",", "."),
-                "Burn (Rp)": lambda x: f"Rp {x:,.0f}".replace(",", "."),
+                "Revenue (Rp)": fmt_rp_full,
+                "Burn (Rp)": fmt_rp_full,
                 "Burn Rate (%)": "{:.2f}%",
             },
             has_total_row=True,

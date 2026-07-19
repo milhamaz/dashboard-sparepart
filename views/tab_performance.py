@@ -7,6 +7,7 @@ from utils.components import (
     hitung_growth, hitung_avg, hitung_aly, render_card, render_growth_card,
     render_bar_chart, render_styled_table, append_total_row, trim_future_months,
 )
+from utils.styles import fmt_rp_full
 
 
 def render(df_order_final, df_supply_final, df_target, pilih_tahun, pilih_bulan, pilih_cabang, fmt_rp, highlight_pct):
@@ -56,7 +57,7 @@ def render(df_order_final, df_supply_final, df_target, pilih_tahun, pilih_bulan,
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    with st.expander("Detail Data (Rupiah)"):
+    with st.expander("Detail Data (Rupiah)", expanded=True):
         detail = trim_future_months(monthly, data_cols=["Order", "Actual"])
         display = detail[["Bulan", "Last_Year", "Target", "Order", "Actual", "O/T", "A/T", "A/LY"]].copy().rename(columns={"Last_Year": "Last Year"})
 
@@ -77,6 +78,6 @@ def render(df_order_final, df_supply_final, df_target, pilih_tahun, pilih_bulan,
 
         render_styled_table(
             display, highlight_pct, pct_cols=['O/T', 'A/T', 'A/LY'],
-            fmt_dict={'O/T': '{:.2f}%', 'A/T': '{:.2f}%', 'A/LY': '{:.2f}%', 'Last Year': lambda x: f"Rp {x:,.0f}".replace(",", "."), 'Target': lambda x: f"Rp {x:,.0f}".replace(",", "."), 'Order': lambda x: f"Rp {x:,.0f}".replace(",", "."), 'Actual': lambda x: f"Rp {x:,.0f}".replace(",", ".")},
+            fmt_dict={'O/T': '{:.2f}%', 'A/T': '{:.2f}%', 'A/LY': '{:.2f}%', 'Last Year': fmt_rp_full, 'Target': fmt_rp_full, 'Order': fmt_rp_full, 'Actual': fmt_rp_full},
             has_total_row=True,
         )

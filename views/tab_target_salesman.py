@@ -37,14 +37,15 @@ def render(df_order_raw, df_supply_final, df_target, df_customer_master, pilih_t
         st.info("Tidak ada data Target/Order untuk filter yang dipilih.")
         return
 
-    # current_salesman dihitung sekali, dipakai bareng buat Target & Order & Actual — biar
-    # gak ngulang groupby+sort atas seluruh histori Order 3x per render.
+    # current_salesman dihitung sekali, dipakai bareng buat Target & Order — biar gak ngulang
+    # groupby+sort atas seluruh histori Order 2x per render. Actual TIDAK lewat current_salesman
+    # (lihat docstring compute_salesman_actual() — Actual pakai Salesman_Code mentah dari Supply).
     current_salesman = compute_current_salesman(df_order_scope, pilih_tahun, bulan_num_list)
     salesman_target = compute_salesman_target(customer_target, df_order_scope, pilih_tahun, bulan_num_list, current_salesman=current_salesman)
     salesman_target = salesman_target[salesman_target["Cabang"].isin(pilih_cabang)].copy()
 
     order_sum = compute_salesman_order(df_order_scope, pilih_tahun, bulan_num_list, current_salesman=current_salesman).set_index("Salesman_Code")["Order"]
-    actual_sum = compute_salesman_actual(df_supply_final, pilih_tahun, bulan_num_list, current_salesman).set_index("Salesman_Code")["Actual"]
+    actual_sum = compute_salesman_actual(df_supply_final, pilih_tahun, bulan_num_list).set_index("Salesman_Code")["Actual"]
     salesman_target["Order"] = salesman_target["Salesman_Code"].map(order_sum).fillna(0)
     salesman_target["Actual"] = salesman_target["Salesman_Code"].map(actual_sum).fillna(0)
     salesman_target["O/T"] = salesman_target.apply(lambda r: hitung_aly(r["Order"], r["Target_Salesman"]), axis=1)

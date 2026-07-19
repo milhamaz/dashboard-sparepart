@@ -36,7 +36,7 @@ with tab_7kp_ui:
     tab_7kp.render(df_order_final, df_supply_final, df_7kp_lookup, df_7kp_prefix, pilih_tahun, pilih_bulan, fmt_rp, highlight_pct)
 
 with tab_dprog_ui:
-    tab_dprog.render(df_order_final, df_supply_final, df_dprog_lookup, pilih_tahun, pilih_bulan, fmt_rp, highlight_pct)
+    tab_dprog.render(df_order_final, df_supply_final, df_dprog_lookup, pilih_tahun, pilih_bulan, fmt_rp)
 
 with tab_gebyur_ui:
     tab_gebyur.render(df_order_final, df_tmo_lookup, df_dprog_lookup, pilih_bulan, fmt_rp, fmt_liter)

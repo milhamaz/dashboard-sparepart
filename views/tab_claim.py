@@ -6,8 +6,7 @@ import streamlit as st
 
 from utils.components import TOTAL_ROW_STYLE, auto_table_height, build_pivot, classify_claim_goodwill, cleanup_selection
 from utils.data_loader import list_bulan_standar
-
-FMT_RP = lambda x: f"Rp {x:,.0f}".replace(",", ".")
+from utils.styles import fmt_rp_full as FMT_RP
 
 
 def render(df_supply):
@@ -21,11 +20,6 @@ def render(df_supply):
     df_claim, _ = classify_claim_goodwill(df_supply)
     df_claim["Salesman_Name"] = df_claim["Salesman_Name"].astype(str).str.strip().str.upper()
     df_claim["Customer_Name"] = df_claim["Customer_Name"].astype(str).str.strip().str.upper()
-
-    st.caption(
-        "Claim = barang retur karena defect/cacat (Qty minus, Invoice No **tidak** mengandung \"G-RJUL\"). "
-        "Nilai Rupiah = |Qty × Retail Price / 1.11|."
-    )
 
     tahun_list = sorted(df_supply["Tahun"].dropna().unique().tolist())
     if not tahun_list:
@@ -109,3 +103,10 @@ def render(df_supply):
                 ),
                 use_container_width=True, hide_index=True, height=min(auto_table_height(len(df_detail)), 500),
             )
+
+    st.markdown("---")
+    st.markdown("### Penjelasan")
+    st.markdown(
+        "- **Claim** adalah barang retur akibat kerusakan atau cacat (defect), diidentifikasi dari transaksi dengan Qty bernilai negatif dan Invoice No yang **tidak** mengandung kode \"G-RJUL\".\n"
+        "- Nilai Claim dalam Rupiah dihitung dengan rumus: **Nilai Claim = |Qty × Retail Price ÷ 1,11|**. Pembagian dengan 1,11 digunakan untuk mengeluarkan komponen PPN (11%) dari harga jual, sehingga nilai yang ditampilkan adalah nilai barang sebelum pajak."
+    )

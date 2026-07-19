@@ -55,7 +55,9 @@ with col3:
     - **Kedalaman** — Total Qty yang di-order
     - **Claim** — Barang retur reject
     - **Goodwill** — Barang retur reject layak jual
-    &nbsp;
+    - **Lead Time** — Durasi Order sampai Actual keluar gudang
+    - **Fill Rate** — Kelengkapan Qty per pengiriman
+    - **Status Fulfillment** — Status akhir tiap Order (akumulatif)
     """)
 
 b1, b2, b3 = st.columns(3)
@@ -75,20 +77,23 @@ with col4:
     st.markdown("""
     ### SDM
     Performa internal perusahaan — orang & cabang:
-    - **Salesman Leaderboard** — ranking Actual & growth YoY per salesman
-    - **Cabang Scorecard** — achievement semua cabang vs target, satu tabel
-    &nbsp;
-    &nbsp;
+    - **Target Cabang** — Achievement semua cabang vs target
+    - **Target Salesman** — Achievement semua salesman vs target
+    - **Cabang Leaderboard** — Ranking Actual & growth YoY per cabang
+    - **Salesman Leaderboard** — Ranking Actual & growth YoY per salesman
+    - **Productivity** — Revenue per customer aktif per salesman
+    - **Segmentasi** — Archetype Cabang/Salesman (rule-based + validasi K-Means)
     """)
 
 with col5:
     st.markdown("""
     ### Customer
     Performa eksternal — kesehatan basis customer:
-    - **Retention & Churn** — customer bertahan/hilang/baru YoY
-    - **Alert Penurunan** — customer aktif dengan penurunan signifikan
-    &nbsp;
-    &nbsp;
+    - **Target Customer** — Achievement customer vs target
+    - **ODOM** — Kestabilan order harian (One Million One Day)
+    - **Retention & Churn** — Customer bertahan/hilang/baru YoY
+    - **Alert Penurunan** — Customer aktif dengan penurunan signifikan
+    - **Suggested Status** — Rekomendasi reaktivasi customer tidak aktif
     """)
 
 b4, b5 = st.columns(2)

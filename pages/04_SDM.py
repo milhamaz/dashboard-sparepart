@@ -6,7 +6,7 @@ from utils.data_loader import load_and_process_data, compute_data_fingerprint
 from utils.filters import render_top_filters
 from utils.styles import inject_styles, fmt_rp
 from utils.components import render_nav_bar, render_footer
-from views import tab_salesman_leaderboard, tab_cabang_leaderboard, tab_target_cabang, tab_target_salesman, tab_productivity
+from views import tab_salesman_leaderboard, tab_cabang_leaderboard, tab_target_cabang, tab_target_salesman, tab_productivity, tab_archetype
 
 st.set_page_config(page_title="SDM", page_icon="👥", layout="wide", initial_sidebar_state="collapsed")
 
@@ -28,8 +28,8 @@ render_nav_bar("sdm")
 df_order_final, df_supply_final, pilih_tahun, pilih_bulan, pilih_cabang, pilih_jenis, pilih_kelas, pilih_area, cabang_list = render_top_filters(df_order, df_supply, page_key="sdm")
 
 # ── Tabs ──
-tab_target_cabang_ui, tab_target_salesman_ui, tab_cabang_leaderboard_ui, tab_salesman_ui, tab_productivity_ui = st.tabs(
-    ["🏢 Target Cabang", "🎯 Target Salesman", "🏆 Cabang Leaderboard", "🏆 Salesman Leaderboard", "📈 Productivity"]
+tab_target_cabang_ui, tab_target_salesman_ui, tab_cabang_leaderboard_ui, tab_salesman_ui, tab_productivity_ui, tab_archetype_ui = st.tabs(
+    ["🏢 Target Cabang", "🎯 Target Salesman", "🏆 Cabang Leaderboard", "🏆 Salesman Leaderboard", "📈 Productivity", "🧭 Segmentasi"]
 )
 
 with tab_target_cabang_ui:
@@ -49,6 +49,12 @@ with tab_salesman_ui:
 
 with tab_productivity_ui:
     tab_productivity.render(
+        df_order, df_order_final, df_supply_final, df_customer_master, pilih_tahun, pilih_bulan,
+        pilih_jenis, pilih_kelas, pilih_area, pilih_cabang, fmt_rp,
+    )
+
+with tab_archetype_ui:
+    tab_archetype.render(
         df_order, df_order_final, df_supply_final, df_customer_master, pilih_tahun, pilih_bulan,
         pilih_jenis, pilih_kelas, pilih_area, pilih_cabang, fmt_rp,
     )

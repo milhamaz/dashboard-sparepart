@@ -198,6 +198,121 @@ def render_top_cabang_heatmap(df, value_col, group_col="Cabang", month_col="Bula
         unsafe_allow_html=True)
 
 
+# Urutan hue kategorikal tetap (fixed order, gak di-cycle acak) — dipetakan ke kategori
+# terurut besar->kecil tiap render, konsisten dengan konvensi "assign categorical hues in
+# fixed order" dari skill dataviz.
+_CATEGORICAL_HUES = ["#3987e5", "#008300", "#d55181", "#c98500", "#199e70", "#d95926", "#9085e9", "#e66767"]
+
+
+def _lighten_hex(hex_color, factor):
+    """Blend warna hex ke arah putih sebesar `factor` (0=asli, 1=putih penuh) — dipakai
+    buat kasih anak node treemap tint lebih terang dari warna induknya, bukan hue baru."""
+    hex_color = hex_color.lstrip("#")
+    r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
+    r = int(r + (255 - r) * factor)
+    g = int(g + (255 - g) * factor)
+    b = int(b + (255 - b) * factor)
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def _interp_colorscale_rgb(colorscale, t):
+    """Interpolasi RGB linear dari colorscale Plotly (list [posisi 0-1, hex]) di posisi
+    `t` (0-1) — dipakai buat tau warna PERSIS yang bakal dirender di suatu titik z,
+    supaya kontras teks bisa dihitung dari warna asli, bukan cuma nebak lewat threshold."""
+    t = max(0.0, min(1.0, t))
+    for (p0, c0), (p1, c1) in zip(colorscale[:-1], colorscale[1:]):
+        if p0 <= t <= p1:
+            ratio = (t - p0) / (p1 - p0) if p1 > p0 else 0.0
+            c0, c1 = c0.lstrip("#"), c1.lstrip("#")
+            r0, g0, b0 = int(c0[0:2], 16), int(c0[2:4], 16), int(c0[4:6], 16)
+            r1, g1, b1 = int(c1[0:2], 16), int(c1[2:4], 16), int(c1[4:6], 16)
+            return r0 + (r1 - r0) * ratio, g0 + (g1 - g0) * ratio, b0 + (b1 - b0) * ratio
+    c = colorscale[-1][1].lstrip("#")
+    return int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16)
+
+
+def _contrast_ink(r, g, b, dark="#1c1006", light="#fff7ed"):
+    """Pilih teks gelap/terang berdasar luminance PERSEPSI dari warna background (r,g,b) —
+    dinamis mengikuti warna asli, bukan nebak dari posisi/threshold nilai data."""
+    luminance = 0.299 * r + 0.587 * g + 0.114 * b
+    return dark if luminance > 150 else light
+
+
+def render_category_cabang_treemap(df, category_col, value_col, group_col="Cabang", top_n=5, key="treemap"):
+    """Treemap 2 level: kategori (root) -> Top-N Cabang kontributor + "Lainnya" (sisa
+    Cabang di luar Top-N, insight Pareto — seberapa terkonsentrasi kontribusi tiap
+    kategori ke segelintir Cabang). Warna kategori pakai hue kategorikal tetap (urutan
+    besar->kecil), anak node cuma tint lebih terang dari induknya (bukan hue terpisah,
+    karena Cabang di sini bukan identitas mandiri, cuma breakdown magnitude 1 kategori).
+
+    Return: dict {kategori: pct_top_n} — %kontribusi Top-N terhadap total kategori itu,
+    dipakai pemanggil buat kalimat insight Pareto ringkas.
+    """
+    if category_col not in df.columns or group_col not in df.columns or df.empty:
+        st.info("Tidak ada data untuk treemap.")
+        return {}
+
+    kategori_totals = df.groupby(category_col)[value_col].sum().sort_values(ascending=False)
+    kategori_list = kategori_totals.index.tolist()
+    if not kategori_list:
+        st.info("Tidak ada data untuk treemap.")
+        return {}
+
+    kategori_color = {kat: _CATEGORICAL_HUES[i % len(_CATEGORICAL_HUES)] for i, kat in enumerate(kategori_list)}
+
+    ids, labels, parents, values, colors, hover = [], [], [], [], [], []
+    pct_top_n = {}
+
+    for kat in kategori_list:
+        total = kategori_totals[kat]
+        ids.append(kat)
+        labels.append(kat)
+        parents.append("")
+        values.append(total)
+        colors.append(kategori_color[kat])
+        hover.append(f"<b>{kat}</b><br>Total: Rp {total:,.0f}".replace(",", "."))
+
+        cabang_totals = df[df[category_col] == kat].groupby(group_col)[value_col].sum().sort_values(ascending=False)
+        top = cabang_totals.head(top_n)
+        rest = cabang_totals.iloc[top_n:].sum()
+        pct_top_n[kat] = (top.sum() / total * 100) if total > 0 else 0.0
+
+        child_color = _lighten_hex(kategori_color[kat], 0.45)
+        for cabang, val in top.items():
+            pct = (val / total * 100) if total > 0 else 0.0
+            ids.append(f"{kat}::{cabang}")
+            labels.append(cabang)
+            parents.append(kat)
+            values.append(val)
+            colors.append(child_color)
+            hover.append(f"<b>{cabang}</b> — {kat}<br>Rp {val:,.0f}".replace(",", ".") + f"<br>{pct:.1f}% dari {kat}")
+
+        if rest > 0:
+            sisa_n = max(len(cabang_totals) - top_n, 0)
+            pct_rest = (rest / total * 100) if total > 0 else 0.0
+            ids.append(f"{kat}::Lainnya")
+            labels.append("Lainnya")
+            parents.append(kat)
+            values.append(rest)
+            colors.append(_lighten_hex(kategori_color[kat], 0.75))
+            hover.append(f"<b>Lainnya</b> ({sisa_n} Cabang) — {kat}<br>Rp {rest:,.0f}".replace(",", ".") + f"<br>{pct_rest:.1f}% dari {kat}")
+
+    fig = go.Figure(go.Treemap(
+        ids=ids, labels=labels, parents=parents, values=values,
+        branchvalues="total",
+        marker=dict(colors=colors, line=dict(width=2, color="#0e1117")),
+        textfont=dict(color="#0f172a", size=13),
+        hovertext=hover, hovertemplate="%{hovertext}<extra></extra>",
+    ))
+    fig.update_layout(
+        height=480,
+        margin=dict(l=4, r=4, t=10, b=4),
+        paper_bgcolor="rgba(0,0,0,0)",
+    )
+    st.plotly_chart(fig, use_container_width=True, key=key)
+    return pct_top_n
+
+
 def render_burn_rate_heatmap(df, revenue_col="Revenue", burn_col="Burn", group_col="Cabang", month_col="Bulan", top_n=7, key="heatmap"):
     """Heatmap top-N Cabang (ranking berdasar total `revenue_col`). Angka besar di tiap
     sel = Revenue (informasi utama, sama seperti render_top_cabang_heatmap), dengan Burn
@@ -234,6 +349,8 @@ def render_burn_rate_heatmap(df, revenue_col="Revenue", burn_col="Burn", group_c
         return
 
     z_clamped = np.clip(rate_pivot.values, 0, 100)
+    BURN_COLORSCALE = [[0, "#3a2410"], [0.3, "#7c4a12"], [0.5, "#c2691a"], [0.7, "#f59e0b"], [1, "#fde68a"]]
+    BURN_RATE_THRESHOLD = 3  # % — sama ambang dipakai highlight_burn_rate_pct di utils/styles.py
 
     hover_texts = []
     for name in names:
@@ -244,9 +361,12 @@ def render_burn_rate_heatmap(df, revenue_col="Revenue", burn_col="Burn", group_c
             row_hover.append(f"<b>{name}</b> — {bln}<br>{rev_str}<br>Burn Rate: {rate:.1f}%")
         hover_texts.append(row_hover)
 
+    # zmin/zmax eksplisit — tanpa ini Plotly auto-scale warna ke rentang MIN-MAX data asli
+    # (bukan 0-100 kayak diasumsikan kode di bawah), bikin warna sel gak konsisten antar
+    # render kalau rentang Burn Rate aktualnya sempit (mis. semua di bawah 10%).
     fig = go.Figure(data=go.Heatmap(
-        z=z_clamped, x=h_cols, y=names,
-        colorscale=[[0, "#3a2410"], [0.3, "#7c4a12"], [0.5, "#c2691a"], [0.7, "#f59e0b"], [1, "#fde68a"]],
+        z=z_clamped, x=h_cols, y=names, zmin=0, zmax=100,
+        colorscale=BURN_COLORSCALE,
         showscale=False,
         hovertext=hover_texts,
         hovertemplate="%{hovertext}<extra></extra>",
@@ -255,7 +375,11 @@ def render_burn_rate_heatmap(df, revenue_col="Revenue", burn_col="Burn", group_c
     for i, name in enumerate(names):
         for j, bln in enumerate(h_cols):
             rate = rate_pivot.loc[name, bln]
-            val_color = "#1c1006" if rate > 50 else "#fff7ed"
+            # Kontras teks dihitung dari warna BACKGROUND ASLI di titik ini (bukan nebak
+            # dari threshold rate), jadi selalu kebaca walau warnanya oren pekat atau
+            # nyaris putih di ujung skala.
+            r, g, b = _interp_colorscale_rgb(BURN_COLORSCALE, rate / 100)
+            val_color = _contrast_ink(r, g, b)
 
             rev_disp = f"{rev_pivot.loc[name, bln] / 1_000:,.0f}".replace(",", ".")
             fig.add_annotation(
@@ -263,9 +387,12 @@ def render_burn_rate_heatmap(df, revenue_col="Revenue", burn_col="Burn", group_c
                 font=dict(size=13, color=val_color, family="monospace"),
                 yshift=8,
             )
+            # Subtitle Burn Rate% dikasih warna semantik (bukan cuma kontras) — hijau kalau
+            # masih di bawah ambang 3%, merah kalau lewat, konsisten sama highlight tabel.
+            burn_text_color = "#ef4444" if rate > BURN_RATE_THRESHOLD else "#10b981"
             fig.add_annotation(
                 x=bln, y=name, text=f"Burn {rate:.1f}%", showarrow=False,
-                font=dict(size=9, color=val_color), yshift=-10,
+                font=dict(size=9, color=burn_text_color), yshift=-10,
             )
 
     fig.update_layout(
@@ -277,7 +404,7 @@ def render_burn_rate_heatmap(df, revenue_col="Revenue", burn_col="Burn", group_c
     )
     fig.add_annotation(
         text="<i>dalam Jutaan <br> x1000</i>", showarrow=False,
-        xref="paper", yref="paper", x=-0.06, y=1.075,
+        xref="paper", yref="paper", x=-0.04, y=1.075,
         font=dict(size=10, color="#94a3b8"),
         xanchor="left",
     )
@@ -285,7 +412,9 @@ def render_burn_rate_heatmap(df, revenue_col="Revenue", burn_col="Burn", group_c
     st.plotly_chart(fig, use_container_width=True, key=key)
     st.markdown(
         '<p style="font-size:10px; color:#64748b; margin-top:-10px;">'
-        'Angka besar = Revenue Item D &nbsp;&nbsp; Warna sel & keterangan kecil = Burn Rate (%), semakin terang/pekat oranye semakin tinggi burn rate.</p>',
+        'Angka besar = Revenue Item D, warna sel = besaran Burn Rate (semakin terang/pekat oranye '
+        f'semakin tinggi) &nbsp;&nbsp; Teks Burn Rate: <span style="color:#10b981">hijau</span> ≤{BURN_RATE_THRESHOLD}%, '
+        '<span style="color:#ef4444">merah</span> di atas itu.</p>',
         unsafe_allow_html=True)
 
 
@@ -629,6 +758,200 @@ def render_bidirectional_barh_chart(df, label_col, left_col, right_col, left_nam
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, font=dict(color="white", size=13)),
         hoverlabel=dict(bgcolor="#1e293b", font_color="white", font_size=13),
         margin=dict(l=10, r=30, t=50, b=10),
+    )
+    st.plotly_chart(fig, use_container_width=True, key=key)
+
+
+def render_bubble_chart(df, label_col, x_col, y_col, size_col, risk_col, x_title, y_title,
+                         value_fmt, risk_threshold=50, key="bubble", extra_hover_cols=None):
+    """Scatter/bubble chart — posisi (x,y) + ukuran bubble (magnitude ke-3) + warna status
+    (risiko, 2 kategori tetap: merah kalau `risk_col` >= `risk_threshold`, biru kalau tidak).
+    Dipakai tab Productivity: x=Jumlah Customer, y=Productivity/Customer, size=Total Revenue,
+    warna=Concentration Risk — biar pengelompokan alami ("pemburu paus" vs "penyebar rata")
+    kelihatan tanpa perlu clustering statistik beneran.
+
+    Sengaja TANPA label teks permanen di tiap titik (banyak subjek = numpuk/gak kebaca) —
+    identitas tiap titik cuma lewat hover, sesuai kaidah "jangan angka di tiap titik".
+
+    `extra_hover_cols` opsional: list of (kolom, label, formatter) yang ditambahkan sebagai
+    baris tambahan di tooltip hover — pola sama dengan render_topn_barh_chart (mis. nama
+    customer di balik Top-1 Concentration, biar gak cuma keliatan angka %-nya doang).
+    """
+    if df.empty:
+        st.info("Tidak ada data untuk chart.")
+        return
+
+    is_risk = df[risk_col] >= risk_threshold
+    colors = np.where(is_risk, "#ef4444", "#2563eb")
+
+    max_size = df[size_col].max()
+    size_ref = (2.0 * max_size / (55.0 ** 2)) if max_size > 0 else 1.0
+
+    def _hover_row(row):
+        lines = [
+            f"<b>{row[label_col]}</b>",
+            f"{x_title}: {row[x_col]:,.0f}".replace(",", "."),
+            f"{y_title}: {value_fmt(row[y_col])}",
+            f"Total: {value_fmt(row[size_col])}",
+            f"Top-1 Concentration: {row[risk_col]:.1f}%",
+        ]
+        if extra_hover_cols:
+            lines += [f"{label}: {fmt(row[col])}" for col, label, fmt in extra_hover_cols]
+        return "<br>".join(lines)
+
+    hover_text = [_hover_row(row) for _, row in df.iterrows()]
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=df[x_col], y=df[y_col], mode="markers",
+        marker=dict(
+            size=df[size_col], sizemode="area", sizeref=size_ref, sizemin=4,
+            color=colors, line=dict(width=1, color="#0e1117"), opacity=0.85,
+        ),
+        hovertext=hover_text, hovertemplate="%{hovertext}<extra></extra>",
+        showlegend=False,
+    ))
+    # Trace kosong cuma buat munculin legend warna (marker size asli di atas gak dikasih
+    # legend karena showlegend=False — kalau diaktifkan, legend-nya ikut2an gede sesuai
+    # ukuran bubble rata-rata, bukan swatch kecil biasa).
+    fig.add_trace(go.Scatter(x=[None], y=[None], mode="markers", marker=dict(size=10, color="#2563eb"), name="Normal", showlegend=True))
+    fig.add_trace(go.Scatter(x=[None], y=[None], mode="markers", marker=dict(size=10, color="#ef4444"), name=f"Concentration Risk (≥{risk_threshold:.0f}%)", showlegend=True))
+
+    fig.update_layout(
+        height=520,
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+        xaxis=dict(title=dict(text=x_title, font=dict(color="white", size=14)), tickfont=dict(color="white", size=12), gridcolor="#333333"),
+        yaxis=dict(title=dict(text=y_title, font=dict(color="white", size=14)), tickfont=dict(color="white", size=12), gridcolor="#333333"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, font=dict(color="white", size=12)),
+        hoverlabel=dict(bgcolor="#1e293b", font_color="white", font_size=13),
+        margin=dict(l=10, r=10, t=40, b=10),
+    )
+    st.plotly_chart(fig, use_container_width=True, key=key)
+
+
+def _hex_to_rgba(hex_color, alpha):
+    h = hex_color.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return f"rgba({r},{g},{b},{alpha})"
+
+
+def render_quadrant_chart(df, label_col, x_col, y_col, size_col, category_col, category_colors,
+                           x_title, y_title, value_fmt, key, x_threshold=50, y_threshold=50,
+                           extra_hover_cols=None, highlight_query=None):
+    """Scatter kuadran: posisi (x,y) dibagi 4 area oleh garis putus-putus di x_threshold/
+    y_threshold, warna titik = kategori (`category_col`, lookup `category_colors`), ukuran
+    bubble = magnitude ke-3 (`size_col`). Beda dari render_bubble_chart yang cuma binary
+    risk (2 warna tetap) — di sini kategori bisa lebih dari 2, dipakai buat segmentasi/
+    archetype rule-based (mis. tab Segmentasi Productivity).
+
+    Satu trace per kategori (bukan 1 trace + warna manual) supaya legend otomatis
+    menunjukkan nama archetype-nya, bukan swatch generik yang perlu trace kosong tambahan
+    kayak render_bubble_chart.
+
+    `highlight_query` opsional — kalau diisi, titik yang label-nya (`label_col`) cocok
+    (substring, case-insensitive) tetap solid + dikasih ring putih tebal, sisanya
+    di-fade ke alpha rendah (WARNA kategori-nya tetap, cuma pudar) supaya titik yang
+    dicari tetap gampang ditemukan di tengah bubble lain. Opacity per-titik di-encode
+    langsung di string rgba() marker.color (bukan marker.opacity array) karena
+    marker.opacity per-titik gak konsisten didukung di semua versi Plotly untuk
+    Scatter 2D — rgba() alpha channel jauh lebih pasti kerja.
+    """
+    if df.empty:
+        st.info("Tidak ada data untuk chart.")
+        return
+
+    max_size = df[size_col].max()
+    size_ref = (2.0 * max_size / (55.0 ** 2)) if max_size > 0 else 1.0
+    query = highlight_query.strip().upper() if highlight_query else ""
+
+    def _hover_row(row):
+        lines = [
+            f"<b>{row[label_col]}</b>",
+            f"{row[category_col]}",
+            f"{x_title}: {row[x_col]:.1f}",
+            f"{y_title}: {row[y_col]:.1f}",
+            f"Total: {value_fmt(row[size_col])}",
+        ]
+        if extra_hover_cols:
+            lines += [f"{label}: {fmt(row[col])}" for col, label, fmt in extra_hover_cols]
+        return "<br>".join(lines)
+
+    fig = go.Figure()
+    for cat, color in category_colors.items():
+        sub = df[df[category_col] == cat]
+        if sub.empty:
+            continue
+        hover_text = [_hover_row(row) for _, row in sub.iterrows()]
+        if query:
+            is_match = sub[label_col].astype(str).str.upper().str.contains(query, na=False)
+            marker_colors = [color if m else _hex_to_rgba(color, 0.12) for m in is_match]
+            line_widths = [3 if m else 1 for m in is_match]
+            line_colors = ["#ffffff" if m else "#0e1117" for m in is_match]
+            trace_opacity = 1.0
+        else:
+            marker_colors = color
+            line_widths = 1
+            line_colors = "#0e1117"
+            trace_opacity = 0.85
+        fig.add_trace(go.Scatter(
+            x=sub[x_col], y=sub[y_col], mode="markers", name=cat,
+            marker=dict(
+                size=sub[size_col], sizemode="area", sizeref=size_ref, sizemin=4,
+                color=marker_colors, line=dict(width=line_widths, color=line_colors), opacity=trace_opacity,
+            ),
+            hovertext=hover_text, hovertemplate="%{hovertext}<extra></extra>",
+            showlegend=True,
+        ))
+
+    fig.add_vline(x=x_threshold, line_dash="dash", line_color="#64748b", opacity=0.6)
+    fig.add_hline(y=y_threshold, line_dash="dash", line_color="#64748b", opacity=0.6)
+
+    fig.update_layout(
+        height=520,
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+        xaxis=dict(title=dict(text=x_title, font=dict(color="white", size=14)), tickfont=dict(color="white", size=12), gridcolor="#333333", range=[0, 100]),
+        yaxis=dict(title=dict(text=y_title, font=dict(color="white", size=14)), tickfont=dict(color="white", size=12), gridcolor="#333333", range=[0, 100]),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, font=dict(color="white", size=12)),
+        hoverlabel=dict(bgcolor="#1e293b", font_color="white", font_size=13),
+        margin=dict(l=10, r=10, t=40, b=10),
+    )
+    st.plotly_chart(fig, use_container_width=True, key=key)
+
+
+def render_waterfall_chart(labels, values, measures, value_fmt, key, yaxis_title=None):
+    """Waterfall chart generik — jembatan dari 1 titik awal ke titik akhir lewat serangkaian
+    kontribusi naik/turun (mis. YoY: Last Year -> +Retained -> +New -> -Churned -> =This Year).
+
+    `measures` ikutin semantik native Plotly Waterfall: "absolute" (bar penuh dari 0, titik
+    awal), "relative" (kontribusi naik/turun, ditumpuk dari running total sebelumnya oleh
+    Plotly), "total" (bar penuh dari 0 lagi, titik akhir/subtotal — value HARUS dihitung
+    sendiri oleh pemanggil, Plotly tidak auto-sum untuk measure ini).
+    """
+    text = [value_fmt(v) for v in values]
+    fig = go.Figure(go.Waterfall(
+        orientation="v",
+        measure=measures,
+        x=labels, y=values,
+        text=text, textposition="outside",
+        textfont=dict(color="#f8fafc", size=13),
+        connector=dict(line=dict(color="#475569", width=1, dash="dot")),
+        increasing=dict(marker=dict(color="#10b981")),
+        decreasing=dict(marker=dict(color="#ef4444")),
+        totals=dict(marker=dict(color="#2563eb")),
+        hovertext=[f"<b>{l}</b><br>{value_fmt(v)}" for l, v in zip(labels, values)],
+        hovertemplate="%{hovertext}<extra></extra>",
+    ))
+    fig.update_layout(
+        height=480,
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+        yaxis=dict(
+            title=dict(text=yaxis_title, font=dict(color="white", size=14)) if yaxis_title else None,
+            tickfont=dict(color="white", size=12), gridcolor="#333333",
+        ),
+        xaxis=dict(tickfont=dict(color="white", size=13)),
+        showlegend=False,
+        margin=dict(l=10, r=10, t=30, b=10),
+        hoverlabel=dict(bgcolor="#1e293b", font_color="white", font_size=13),
     )
     st.plotly_chart(fig, use_container_width=True, key=key)
 
@@ -1102,15 +1425,23 @@ def build_scope_title(base_title, pilih_cabang, all_cabang_list, pilih_bulan, al
     return f"{base_title} {' '.join(tags)}" if tags else base_title
 
 
-def render_card(icon, title, value, sub):
+def render_card(icon, title, value, sub, accent_color=None):
     """Return HTML string untuk metric card standar. `icon` boleh string kosong ""
-    (card tanpa ikon) — tidak menyisakan spasi nyasar di depan title."""
+    (card tanpa ikon) — tidak menyisakan spasi nyasar di depan title.
+
+    `accent_color` opsional (hex, mis. "#10b981") — kasih strip warna di kiri card +
+    warna title/sub ikut accent itu (bukan amber default di CSS class), dipakai buat
+    card yang perlu dibedakan visual per kategori (mis. archetype Segmentasi). Default
+    None = tampilan lama persis, gak ada perubahan buat card lain yang sudah ada.
+    """
     card_title = f"{icon} {title}" if icon else title
+    card_style = f' style="border-left: 4px solid {accent_color};"' if accent_color else ""
+    text_style = f' style="color:{accent_color};"' if accent_color else ""
     return (
-        f'<div class="custom-card">'
-        f'<div class="card-title">{card_title}</div>'
+        f'<div class="custom-card"{card_style}>'
+        f'<div class="card-title"{text_style}>{card_title}</div>'
         f'<div class="card-value">{value}</div>'
-        f'<div class="card-sub">{sub}</div>'
+        f'<div class="card-sub"{text_style}>{sub}</div>'
         f'</div>'
     )
 

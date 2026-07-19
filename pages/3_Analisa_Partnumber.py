@@ -6,7 +6,7 @@ import pandas as pd
 from utils.data_loader import load_and_process_data, compute_data_fingerprint, list_bulan_standar
 from utils.styles import inject_styles
 from utils.components import TOTAL_ROW_STYLE, auto_table_height, build_pivot, cleanup_selection, render_nav_bar, render_footer
-from views import tab_claim, tab_goodwill
+from views import tab_claim, tab_goodwill, tab_leadtime, tab_fillrate, tab_statusfulfillment
 
 st.set_page_config(page_title="Analisa Partnumber", page_icon="🔍", layout="wide", initial_sidebar_state="collapsed")
 
@@ -21,7 +21,8 @@ render_nav_bar("partnumber")
 
 st.caption(
     "**Kelebaran** = Unique Partnumber &nbsp;|&nbsp; **Kedalaman** = Sum Qty &nbsp;|&nbsp; "
-    "**Claim** = Barang reject &nbsp;|&nbsp; **Goodwill** = Barang reject layak jual."
+    "**Claim** = Barang reject &nbsp;|&nbsp; **Goodwill** = Barang reject layak jual &nbsp;|&nbsp; **Lead Time** = Waktu dari Order sampai Supply "
+    "&nbsp;|&nbsp; **Fill Rate** = Kelengkapan Qty per pengiriman &nbsp;|&nbsp; **Status Fulfillment** = Status akhir tiap Order."
 )
 
 # ── Load Data (cuma butuh df_order) ──
@@ -283,25 +284,41 @@ def render_pivot_section(df_src, value_col, aggfunc, key_prefix):
     )
 
 
-tab_lebar, tab_dalam, tab_claim_ui, tab_goodwill_ui = st.tabs(["📐 Kelebaran", "📏 Kedalaman", "📤 Claim", "♻️ Goodwill"])
+tab_lebar, tab_dalam, tab_claim_ui, tab_goodwill_ui, tab_leadtime_ui, tab_fillrate_ui, tab_statusfulfillment_ui = st.tabs(
+    ["📐 Kelebaran", "📏 Kedalaman", "📤 Claim", "♻️ Goodwill", "⏱️ Lead Time", "🚚 Fill Rate", "📊 Status Fulfillment"]
+)
 
 with tab_lebar:
-    st.caption(
-        "Kelebaran = jumlah **unique Partnumber** yang di-order. Baris/kolom **TOTAL** "
-        "bukan hasil jumlah dari baris/kolom di atasnya — dihitung ulang langsung dari "
-        "gabungan datanya, supaya partnumber yang sama tidak double-count kalau muncul "
-        "di lebih dari satu Area/Cabang/Salesman/Customer atau periode."
-    )
     render_pivot_section(df, "Partnumber", "nunique", "kelebaran")
+    st.markdown("---")
+    st.markdown("### Penjelasan")
+    st.markdown(
+        "- **Kelebaran** menunjukkan jumlah Partnumber unik yang dipesan, dihitung sebagai banyaknya nomor part yang berbeda (bukan total transaksi atau total quantity) dalam suatu Area, Cabang, Salesman, Customer, atau periode tertentu. Metrik ini menggambarkan **keberagaman produk** yang terjual — semakin besar nilainya, semakin luas ragam produk yang dibeli oleh subjek tersebut.\n"
+        "- Baris dan kolom **TOTAL** tidak diperoleh dari menjumlahkan angka-angka di atasnya, melainkan dihitung ulang langsung dari data gabungan. Hal ini dilakukan agar Partnumber yang sama tidak terhitung berulang kali apabila muncul di lebih dari satu Area, Cabang, Salesman, Customer, atau periode."
+    )
 
 with tab_dalam:
-    st.caption("Kedalaman = **total Qty** yang di-order.")
     render_pivot_section(df, "Qty", "sum", "kedalaman")
+    st.markdown("---")
+    st.markdown("### Penjelasan")
+    st.markdown(
+        "- **Kedalaman** menunjukkan total quantity (Qty) yang dipesan, yaitu penjumlahan seluruh unit barang yang dibeli tanpa memperhatikan keberagaman jenis Partnumber-nya. Metrik ini menggambarkan **volume pembelian** — semakin besar nilainya, semakin banyak unit barang yang dibeli oleh subjek tersebut, meskipun jenis Partnumber-nya bisa saja terbatas.\n"
+        "- **Kelebaran** dan **Kedalaman** sebaiknya dibaca berdampingan: subjek dengan Kelebaran tinggi namun Kedalaman rendah cenderung membeli banyak jenis produk dalam jumlah kecil-kecil, sedangkan subjek dengan Kelebaran rendah namun Kedalaman tinggi cenderung membeli sedikit jenis produk namun dalam jumlah besar."
+    )
 
 with tab_claim_ui:
     tab_claim.render(df_supply)
 
 with tab_goodwill_ui:
     tab_goodwill.render(df_supply)
+
+with tab_leadtime_ui:
+    tab_leadtime.render(df_order, df_supply)
+
+with tab_fillrate_ui:
+    tab_fillrate.render(df_order, df_supply)
+
+with tab_statusfulfillment_ui:
+    tab_statusfulfillment.render(df_order, df_supply)
 
 render_footer()

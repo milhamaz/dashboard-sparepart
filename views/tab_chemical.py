@@ -6,6 +6,7 @@ from utils.components import (
     validate_lookup, render_tile_filter, merge_lookup_triplet, aggregate_monthly,
     render_trend_cards, render_trend_chart_and_table, render_value_breakdown,
 )
+from utils.styles import fmt_rp_full
 
 
 def render(df_order_final, df_supply_final, df_chem_lookup, pilih_tahun, pilih_bulan, fmt_rp, highlight_pct):
@@ -55,11 +56,11 @@ def render(df_order_final, df_supply_final, df_chem_lookup, pilih_tahun, pilih_b
         detail_labels={
             "expander_title": "Detail Data Chemical (Rupiah)",
             "ly": "Last Year", "order": "Order", "supply": "Actual",
-            "cell_fmt": lambda x: f"Rp {x:,.0f}".replace(",", "."),
+            "cell_fmt": fmt_rp_full,
             "no_data": "Tidak ada data Chemical untuk filter yang dipilih.",
         },
         highlight_pct=highlight_pct,
     )
 
     st.markdown("#### Breakdown Chemical per Cabang/Customer")
-    render_value_breakdown(df_ord_chem, "Order", key_prefix="chem", fmt_cell=lambda x: f"Rp {x:,.0f}".replace(",", "."))
+    render_value_breakdown(df_ord_chem, "Order", key_prefix="chem", fmt_cell=fmt_rp_full)

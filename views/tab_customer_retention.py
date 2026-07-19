@@ -3,7 +3,7 @@
 # ============================================================
 import streamlit as st
 
-from utils.components import render_card, auto_table_height, compute_customer_yoy
+from utils.components import render_card, auto_table_height, compute_customer_yoy, render_waterfall_chart
 from utils.styles import fmt_rp_full as FMT_RP
 
 
@@ -47,6 +47,34 @@ def render(df_supply_final, pilih_tahun):
             f'<div class="card-sub">Customer hilang / Customer baru</div></div>',
             unsafe_allow_html=True,
         )
+
+    # ── Waterfall: jembatan Last Year -> This Year lewat kontribusi Retained/New/Churned ──
+    # Retained_delta = (This_Year - Last_Year) yang tetap beli KEDUA tahun (bisa naik/turun).
+    # New = Actual customer baru tahun ini. Churned = Actual customer yang lepas (dikurangi,
+    # karena mereka nyumbang 0 di tahun ini). Aljabar: LY_total + Retained_delta + New -
+    # Churned == TY_total, terjamin by construction (LY_total = LY dari Retained+Churned;
+    # TY_total = TY dari Retained+New; customer New/Churned gak overlap kedua tahun).
+    retained_mask = yoy["Status"] == "Retained"
+    new_mask = yoy["Status"] == "New"
+    churned_mask = yoy["Status"] == "Churned"
+
+    ly_total_value = yoy.loc[retained_mask | churned_mask, "Last_Year"].sum()
+    retained_delta = (yoy.loc[retained_mask, "This_Year"] - yoy.loc[retained_mask, "Last_Year"]).sum()
+    new_value = yoy.loc[new_mask, "This_Year"].sum()
+    churned_value = yoy.loc[churned_mask, "Last_Year"].sum()
+    ty_total_value = ly_total_value + retained_delta + new_value - churned_value
+
+    st.markdown(f"#### Breakdown YoY — {pilih_tahun - 1} → {pilih_tahun}")
+    st.caption(
+        "Dari mana datangnya perubahan Actual tahun ini dibanding tahun lalu — bukan cuma "
+        "angka before/after, tapi dipecah per sumber kontribusinya."
+    )
+    render_waterfall_chart(
+        labels=[str(pilih_tahun - 1), "Δ Retained", "New", "Churned", str(pilih_tahun)],
+        values=[ly_total_value, retained_delta, new_value, -churned_value, ty_total_value],
+        measures=["absolute", "relative", "relative", "relative", "total"],
+        value_fmt=FMT_RP, key="chart_retention_waterfall", yaxis_title="Actual (Rp)",
+    )
 
     st.markdown("#### Customer Baru — diurutkan dari nilai terbesar tahun ini")
     new_cust = yoy[yoy["Status"] == "New"].sort_values("This_Year", ascending=False).copy()

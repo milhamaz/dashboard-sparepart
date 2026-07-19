@@ -15,6 +15,9 @@ def fmt_rp_full(val):
 def fmt_liter(val):
     return f"{val:,.0f}".replace(",", ".") + " L"
 
+def fmt_pct(val):
+    return f"{val:.1f}%".replace(".", ",")
+
 highlight_pct = lambda val: (
     'background-color: rgba(34, 197, 94, 0.1); color: #22c55e; font-weight: bold;'
     if val >= 100
@@ -39,6 +42,16 @@ highlight_concentration_pct = lambda val: (
     'background-color: rgba(239, 68, 68, 0.15); color: #ef4444; font-weight: bold;'
     if val >= 50
     else 'background-color: rgba(34, 197, 94, 0.08); color: #22c55e;'
+)
+
+# Fill hijau kalau Burn Rate <=3% (masih terkendali), merah kalau lebih (dipakai tab Item
+# D) — kebalikan dari highlight_pct/highlight_concentration_pct: di sini MAKIN KECIL makin
+# bagus (burn = uang "terbakar" dari diskon, bukan capaian yang mau dimaksimalkan). Ambang
+# 3% masih percobaan awal (belum ada baseline historis), gampang diubah kalau perlu.
+highlight_burn_rate_pct = lambda val: (
+    'background-color: rgba(239, 68, 68, 0.1); color: #ef4444; font-weight: bold;'
+    if val > 3
+    else 'background-color: rgba(34, 197, 94, 0.1); color: #22c55e; font-weight: bold;'
 )
 
 CARD_STYLE = """

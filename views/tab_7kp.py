@@ -4,7 +4,8 @@
 import streamlit as st
 import pandas as pd
 from utils.data_loader import list_bulan_standar
-from utils.components import render_card, auto_table_height, render_tile_filter, render_top_cabang_heatmap
+from utils.components import auto_table_height, render_tile_filter, render_top_cabang_heatmap, render_category_cabang_treemap
+from utils.styles import fmt_rp_full
 
 def match_7kp(df, df_7kp_lookup, df_7kp_prefix):
     if df.empty or "Partnumber" not in df.columns:
@@ -77,7 +78,7 @@ def render(df_order_final, df_supply_final, df_7kp_lookup, df_7kp_prefix, pilih_
     styled_pivot = display_table.style.format(
         formatter=lambda x: f"{x:.1f}%", subset=pd.IndexSlice["Komposisi (%)", :]
     ).format(
-        formatter=lambda x: f"Rp {x:,.0f}".replace(",", "."), subset=pd.IndexSlice[display_table.index[:-1], :]
+        formatter=fmt_rp_full, subset=pd.IndexSlice[display_table.index[:-1], :]
     ).set_properties(**{'text-align': 'right', 'font-size': '13px'}
     ).set_properties(subset=pd.IndexSlice["TOTAL", :], **{
         'font-weight': 'bold', 'background-color': 'rgba(245, 158, 11, 0.15)', 'border-top': '2px solid #f59e0b'}
@@ -86,14 +87,36 @@ def render(df_order_final, df_supply_final, df_7kp_lookup, df_7kp_prefix, pilih_
 
     st.dataframe(styled_pivot, use_container_width=True, height=auto_table_height(len(display_table)))
 
-    # ══════════════════════════════════════════════════════════
-    # HEATMAP: Top 7 Cabang — MoM Growth Coloring (Revised)
-    # ══════════════════════════════════════════════════════════
-    st.markdown("#### Top 7 Cabang per Kategori")
-
     if "Cabang" not in df_ord_7kp.columns:
         st.info("Kolom 'Cabang' tidak ditemukan.")
         return
+
+    # ══════════════════════════════════════════════════════════
+    # TREEMAP: Kontributor Cabang per Kategori (Top 5 + Lainnya) — insight Pareto
+    # ══════════════════════════════════════════════════════════
+    st.markdown("#### Kontributor Cabang per Kategori")
+    st.caption(
+        "Tiap kotak besar = 1 kategori 7KP, dipecah lagi jadi Top 5 Cabang penyumbang "
+        "terbesar + \"Lainnya\" (sisa Cabang di luar Top 5) — buat lihat seberapa "
+        "terkonsentrasi kontribusi tiap kategori ke segelintir Cabang."
+    )
+    pct_top_n = render_category_cabang_treemap(
+        df_ord_7kp, category_col="Grup_Part_7KP", value_col="Order", key="treemap_7kp",
+    )
+    if pct_top_n:
+        avg_concentration = sum(pct_top_n.values()) / len(pct_top_n)
+        paling_terkonsentrasi = max(pct_top_n, key=pct_top_n.get)
+        st.markdown(
+            f'<p style="font-size:12px; color:#94a3b8; margin-top:-4px;">'
+            f'📌 Rata-rata Top 5 Cabang menyumbang <b>{avg_concentration:.0f}%</b> dari tiap kategori. '
+            f'Paling terkonsentrasi: <b>{paling_terkonsentrasi}</b> ({pct_top_n[paling_terkonsentrasi]:.0f}% dari Top 5 Cabang saja).</p>',
+            unsafe_allow_html=True,
+        )
+
+    # ══════════════════════════════════════════════════════════
+    # HEATMAP: Top 7 Cabang — MoM Growth Coloring (Revised)
+    # ══════════════════════════════════════════════════════════
+    st.markdown("#### Top 7 Cabang per Kategori — Tren Bulanan")
 
     pilih_heatmap_kat = st.selectbox("Pilih kategori:", kategori_list, key="7kp_heatmap_kat")
     df_kat = df_ord_7kp[df_ord_7kp["Grup_Part_7KP"] == pilih_heatmap_kat]

@@ -9,8 +9,7 @@ from utils.components import (
     cleanup_selection, render_qty_heatmap,
 )
 from utils.data_loader import list_bulan_standar
-
-FMT_RP = lambda x: f"Rp {x:,.0f}".replace(",", ".")
+from utils.styles import fmt_rp_full as FMT_RP
 
 
 def render(df_supply):
@@ -22,11 +21,6 @@ def render(df_supply):
         return
 
     _, df_goodwill = classify_claim_goodwill(df_supply)
-
-    st.caption(
-        "Goodwill = barang retur defect ringan yang tetap masuk inventory cabang (Qty minus, "
-        "Invoice No mengandung \"G-RJUL\"). Qty dianggap reset tiap bulan (tidak akumulatif antar bulan)."
-    )
 
     tahun_list = sorted(df_supply["Tahun"].dropna().unique().tolist())
     if not tahun_list:
@@ -70,3 +64,10 @@ def render(df_supply):
 
     st.markdown("**Qty Goodwill — Seluruh Cabang**")
     render_qty_heatmap(df_goodwill_scope, "Goodwill_Qty", group_col="Cabang", month_col="Bulan", key="gw_qty_heatmap")
+
+    st.markdown("---")
+    st.markdown("### Penjelasan")
+    st.markdown(
+        "- **Goodwill** adalah barang retur akibat kerusakan ringan (defect ringan) yang tetap dimasukkan kembali ke dalam inventory Cabang untuk dijual kembali, diidentifikasi dari transaksi dengan Qty bernilai negatif dan Invoice No yang mengandung kode \"G-RJUL\".\n"
+        "- Quantity Goodwill dihitung ulang (reset) setiap bulan dan tidak bersifat akumulatif antarbulan — angka pada bulan tertentu murni mencerminkan aktivitas retur di bulan tersebut, bukan penjumlahan dari bulan-bulan sebelumnya."
+    )

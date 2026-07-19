@@ -224,24 +224,30 @@ def compute_salesman_order(df_order_raw, pilih_tahun, bulan_num_list, current_sa
     return result[cols]
 
 
-def compute_salesman_actual(df_supply_final, pilih_tahun, bulan_num_list, current_salesman):
-    """Actual (Supply) per Salesman_Code untuk periode `bulan_num_list`, diatribusikan pakai
-    mapping `current_salesman` yang SAMA dipakai compute_salesman_order() — supaya Order dan
-    Actual apple-to-apple, dikreditkan ke pemegang customer yang sama persis (lihat docstring
-    compute_salesman_order() soal kenapa atribusinya berdasar pemegang SEKARANG, bukan histori).
+def compute_salesman_actual(df_supply_final, pilih_tahun, bulan_num_list):
+    """Actual (Supply) per Salesman_Code untuk periode `bulan_num_list` — diatribusikan pakai
+    Salesman_Code YANG NEMPEL di baris Supply itu sendiri, BUKAN "pemegang Order terkini"
+    (beda dari compute_salesman_order()/compute_salesman_target(), yang sengaja pakai
+    current_salesman — lihat docstring compute_salesman_order()).
+
+    Supply di-generate sistem logistik pihak ketiga H+1+ setelah barang keluar gudang (bukan
+    real-time pas Order masuk, dan qty-nya juga gak selalu 1:1 sama Order — tergantung
+    ketersediaan stok) — jadi Salesman_Code di situ sudah snapshot point-in-time siapa yang
+    pegang customer itu SAAT barang keluar, bukan status yang perlu direkonstruksi ulang.
+    Kalau dipaksa lewat current_salesman (pemegang Order PALING BARU saat laporan dibuka),
+    Actual lama bisa "kecuri" pemegang baru begitu Order-nya di-reassign duluan sebelum
+    Actual-nya nyusul — customer yang Order-nya baru pindah tangan taun ini tapi Actual-nya
+    masih nyicil dari Order taun lalu bakal ke-kreditkan ke pemegang BARU, padahal Actual itu
+    hasil kerja pemegang LAMA. Grouping langsung dari Supply menghindari itu, dan sekalian
+    bikin angkanya konsisten sama tab Salesman Leaderboard (yang juga baca Salesman_Code/Name
+    mentah dari Supply, bukan lewat current_salesman).
     """
     cols = ["Salesman_Code", "Actual"]
     if df_supply_final is None or df_supply_final.empty or not bulan_num_list:
         return pd.DataFrame(columns=cols)
 
     scope = df_supply_final[(df_supply_final["Tahun"] == pilih_tahun) & (df_supply_final["Bulan_Num"].isin(bulan_num_list))]
-    actual_by_cust = scope.groupby("Customer_No")["Actual"].sum().rename("Actual").reset_index()
-
-    merged = current_salesman.merge(actual_by_cust, on="Customer_No", how="left")
-    merged["Actual"] = merged["Actual"].fillna(0)
-
-    result = merged.groupby("Salesman_Code", as_index=False)["Actual"].sum()
-    return result[cols]
+    return scope.groupby("Salesman_Code", as_index=False)["Actual"].sum()[cols]
 
 
 def compute_salesman_target(df_customer_target, df_order_raw, pilih_tahun, bulan_num_list, current_salesman=None):
