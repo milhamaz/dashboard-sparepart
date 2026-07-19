@@ -56,8 +56,9 @@ KP7_FILE = BASE_DIR / "Pno7KP.xlsx"
 KP7_PREFIX_FILE = BASE_DIR / "Pno7KP_Prefix.xlsx"
 DPROG_FILE = BASE_DIR / "PnoDProg.xlsx"
 KELAS_CABANG_FILE = BASE_DIR / "Kelas_Cabang.xlsx"
+PART_MASTER_FILE = BASE_DIR / "part_master.xlsx"
 
-_MASTER_FILES = [CUSTOMER_FILE, TARGET_FILE, KALKERJA_FILE, TMO_FILE, TOPT_FILE, CHEM_FILE, BATTERY_FILE, KP7_FILE, KP7_PREFIX_FILE, DPROG_FILE, KELAS_CABANG_FILE]
+_MASTER_FILES = [CUSTOMER_FILE, TARGET_FILE, KALKERJA_FILE, TMO_FILE, TOPT_FILE, CHEM_FILE, BATTERY_FILE, KP7_FILE, KP7_PREFIX_FILE, DPROG_FILE, KELAS_CABANG_FILE, PART_MASTER_FILE]
 
 # ── Estimasi COGS/Profit (data pembelian TASTI-ke-Toyota ga praktis ditarik bulk) ──
 TMO_PREFIX = "08880"
@@ -86,6 +87,23 @@ def load_kelas_cabang():
     perlu ikut nambahin tuple besar yang di-unpack di 5 halaman lain."""
     df = pd.read_excel(KELAS_CABANG_FILE, engine="openpyxl")
     df.columns = df.columns.str.strip().str.replace(" ", "_")
+    return df
+
+
+@st.cache_data
+def load_part_master(fingerprint):
+    """Master klasifikasi Partnumber -> mat_group (kategori produk: TGP/AVANZA/TMO/dst) —
+    dipisah dari load_and_process_data() karena cuma dibutuhkan tab Komposisi Kategori
+    (Analisa Partnumber), gak perlu ikut nambahin tuple besar yang di-unpack di 5 halaman
+    lain. `fingerprint` (dari compute_data_fingerprint(), PART_MASTER_FILE sudah masuk
+    _MASTER_FILES) cuma dipakai sebagai cache key — file ini sering di-update manual saat
+    proses rapi-rapi data, jadi cache-nya harus ikut invalidasi begitu mtime-nya berubah.
+    """
+    df = pd.read_excel(PART_MASTER_FILE, engine="openpyxl")
+    df.columns = df.columns.str.strip().str.replace(" ", "_")
+    df["part_number"] = df["part_number"].astype(str).str.upper().str.strip()
+    df["part_number_substitusi"] = df["part_number_substitusi"].astype(str).str.upper().str.strip()
+    df.loc[df["part_number_substitusi"].isin(["NAN", "NONE", ""]), "part_number_substitusi"] = pd.NA
     return df
 
 

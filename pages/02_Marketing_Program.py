@@ -6,7 +6,7 @@ from utils.data_loader import load_and_process_data, compute_data_fingerprint
 from utils.filters import render_top_filters
 from utils.styles import inject_styles, fmt_rp, fmt_liter, highlight_pct
 from utils.components import render_nav_bar, render_footer
-from views import tab_7kp, tab_dprog, tab_gebyur
+from views import tab_7kp, tab_itemd, tab_gebyur
 
 st.set_page_config(page_title="Marketing Program", page_icon="📢", layout="wide", initial_sidebar_state="collapsed")
 
@@ -28,15 +28,15 @@ render_nav_bar("marketing")
 df_order_final, df_supply_final, pilih_tahun, pilih_bulan, pilih_cabang, pilih_jenis, pilih_kelas, pilih_area, cabang_list = render_top_filters(df_order, df_supply, page_key="marketing")
 
 # ── Tabs ──
-tab_7kp_ui, tab_dprog_ui, tab_gebyur_ui = st.tabs(
+tab_7kp_ui, tab_itemd_ui, tab_gebyur_ui = st.tabs(
     ["🎯 7 Key Product", "🏷️ Item D", "🎁 Gebyur"]
 )
 
 with tab_7kp_ui:
     tab_7kp.render(df_order_final, df_supply_final, df_7kp_lookup, df_7kp_prefix, pilih_tahun, pilih_bulan, fmt_rp, highlight_pct)
 
-with tab_dprog_ui:
-    tab_dprog.render(df_order_final, df_supply_final, df_dprog_lookup, pilih_tahun, pilih_bulan, fmt_rp)
+with tab_itemd_ui:
+    tab_itemd.render(df_order_final, df_supply_final, df_dprog_lookup, pilih_tahun, pilih_bulan, fmt_rp)
 
 with tab_gebyur_ui:
     tab_gebyur.render(df_order_final, df_tmo_lookup, df_dprog_lookup, pilih_bulan, fmt_rp, fmt_liter)

@@ -3,10 +3,10 @@
 # ============================================================
 import streamlit as st
 import pandas as pd
-from utils.data_loader import load_and_process_data, compute_data_fingerprint, list_bulan_standar
+from utils.data_loader import load_and_process_data, compute_data_fingerprint, load_part_master, list_bulan_standar
 from utils.styles import inject_styles
 from utils.components import TOTAL_ROW_STYLE, auto_table_height, build_pivot, cleanup_selection, render_nav_bar, render_footer
-from views import tab_claim, tab_goodwill, tab_leadtime, tab_fillrate, tab_statusfulfillment
+from views import tab_claim, tab_goodwill, tab_leadtime, tab_fillrate, tab_statusfulfillment, tab_komposisi
 
 st.set_page_config(page_title="Analisa Partnumber", page_icon="🔍", layout="wide", initial_sidebar_state="collapsed")
 
@@ -19,12 +19,6 @@ st.markdown(
 
 render_nav_bar("partnumber")
 
-st.caption(
-    "**Kelebaran** = Unique Partnumber &nbsp;|&nbsp; **Kedalaman** = Sum Qty &nbsp;|&nbsp; "
-    "**Claim** = Barang reject &nbsp;|&nbsp; **Goodwill** = Barang reject layak jual &nbsp;|&nbsp; **Lead Time** = Waktu dari Order sampai Supply "
-    "&nbsp;|&nbsp; **Fill Rate** = Kelengkapan Qty per pengiriman &nbsp;|&nbsp; **Status Fulfillment** = Status akhir tiap Order."
-)
-
 # ── Load Data (cuma butuh df_order) ──
 (df_order, df_supply, df_target, df_tmo_lookup, df_topt_lookup,
  df_chem_lookup, df_tgb_lookup, df_7kp_lookup, df_dprog_lookup, df_kalkerja,
@@ -33,6 +27,8 @@ st.caption(
 if df_order is None or df_order.empty:
     st.warning("Data Order belum siap.")
     st.stop()
+
+df_part_master = load_part_master(compute_data_fingerprint())
 
 # ── Siapkan kolom dimensi ──
 df = df_order.copy()
@@ -284,8 +280,8 @@ def render_pivot_section(df_src, value_col, aggfunc, key_prefix):
     )
 
 
-tab_lebar, tab_dalam, tab_claim_ui, tab_goodwill_ui, tab_leadtime_ui, tab_fillrate_ui, tab_statusfulfillment_ui = st.tabs(
-    ["📐 Kelebaran", "📏 Kedalaman", "📤 Claim", "♻️ Goodwill", "⏱️ Lead Time", "🚚 Fill Rate", "📊 Status Fulfillment"]
+tab_lebar, tab_dalam, tab_claim_ui, tab_goodwill_ui, tab_leadtime_ui, tab_fillrate_ui, tab_statusfulfillment_ui, tab_komposisi_ui = st.tabs(
+    ["📐 Kelebaran", "📏 Kedalaman", "📤 Claim", "♻️ Goodwill", "⏱️ Lead Time", "🚚 Fill Rate", "📊 Status Fulfillment", "🧬 Komposisi Kategori"]
 )
 
 with tab_lebar:
@@ -320,5 +316,8 @@ with tab_fillrate_ui:
 
 with tab_statusfulfillment_ui:
     tab_statusfulfillment.render(df_order, df_supply)
+
+with tab_komposisi_ui:
+    tab_komposisi.render(df_supply, df_part_master)
 
 render_footer()

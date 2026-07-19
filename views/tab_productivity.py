@@ -120,9 +120,9 @@ def render(df_order_raw, df_order_final, df_supply_final, df_customer_master, pi
     st.markdown("---")
     st.markdown("### Penjelasan")
     st.markdown(
-        "- **Productivity** = Order/Actual dibagi jumlah customer yang di-assign (bukan cuma yang aktif transaksi) — supaya subjek yang cuma mengandalkan sedikit akun besar tidak terlihat lebih \"produktif\" dari yang bekerja ke seluruh portofolionya.\n"
-        "- **Relative Productivity (%)** = Productivity (Actual) dibanding rata-rata Cabang sendiri (untuk Salesman) atau rata-rata Nasional (untuk Cabang) — bukan dibanding Target, supaya bukan sekadar mengulang Achievement% yang sudah ada di tab Target.\n"
-        "- **Top-1 Concentration (%)** = seberapa besar 1 customer terbesar menyumbang ke revenue subjek ini. ≥50% berarti kalau customer itu berhenti, lebih dari separuh revenue subjek ini ikut hilang.\n"
-        f"- **Sample Kecil** = subjek dengan <{_MIN_N_CUSTOMER} customer assigned — angka Productivity-nya gampang melenceng gara-gara 1-2 transaksi besar, baca hati-hati.\n"
-        f"- **{subject} Kurang Produktif** = Productivity (Actual) terendah, cuma dihitung dari subjek dengan sample memadai (≥{_MIN_N_CUSTOMER} customer) — supaya bukan sekadar subjek 1-2 customer ber-Actual mepet 0 yang muncul, tapi underperform beneran."
+        "- **Productivity** = Order/Actual dibagi jumlah customer yang di-assign (bukan hanya yang aktif bertransaksi) — agar subjek yang hanya mengandalkan sedikit akun besar tidak terlihat lebih \"produktif\" dibandingkan subjek yang menggarap seluruh portofolionya.\n"
+        "- **Relative Productivity (%)** = Productivity (Actual) dibandingkan rata-rata Cabang sendiri (untuk Salesman) atau rata-rata Nasional (untuk Cabang) — bukan dibandingkan Target, agar metrik ini tidak sekadar mengulang Achievement% yang sudah tersedia di tab Target.\n"
+        "- **Top-1 Concentration (%)** = seberapa besar kontribusi satu customer terbesar terhadap revenue subjek ini. Nilai ≥50% berarti apabila customer tersebut berhenti bertransaksi, lebih dari separuh revenue subjek ini ikut hilang.\n"
+        f"- **Sample Kecil** = subjek dengan <{_MIN_N_CUSTOMER} customer assigned — angka Productivity-nya mudah menyimpang akibat 1-2 transaksi besar, sehingga perlu diinterpretasikan dengan hati-hati.\n"
+        f"- **{subject} Kurang Produktif** = Productivity (Actual) terendah, dihitung hanya dari subjek dengan sample yang memadai (≥{_MIN_N_CUSTOMER} customer) — agar yang muncul benar-benar mencerminkan underperformance, bukan sekadar subjek dengan 1-2 customer yang Actual-nya mendekati nol."
     )

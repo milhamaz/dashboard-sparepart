@@ -96,9 +96,9 @@ def render(df_order_final, df_supply_final, df_7kp_lookup, df_7kp_prefix, pilih_
     # ══════════════════════════════════════════════════════════
     st.markdown("#### Kontributor Cabang per Kategori")
     st.caption(
-        "Tiap kotak besar = 1 kategori 7KP, dipecah lagi jadi Top 5 Cabang penyumbang "
-        "terbesar + \"Lainnya\" (sisa Cabang di luar Top 5) — buat lihat seberapa "
-        "terkonsentrasi kontribusi tiap kategori ke segelintir Cabang."
+        "Tiap kotak besar merepresentasikan satu kategori 7KP, dipecah lebih lanjut menjadi Top 5 Cabang "
+        "penyumbang terbesar dan \"Lainnya\" (gabungan Cabang di luar Top 5) — untuk melihat seberapa "
+        "terkonsentrasi kontribusi tiap kategori pada segelintir Cabang."
     )
     pct_top_n = render_category_cabang_treemap(
         df_ord_7kp, category_col="Grup_Part_7KP", value_col="Order", key="treemap_7kp",
@@ -126,9 +126,25 @@ def render(df_order_final, df_supply_final, df_7kp_lookup, df_7kp_prefix, pilih_
 
     render_top_cabang_heatmap(df_kat, value_col="Order", key=f"heatmap_{pilih_heatmap_kat}")
 
-    # Teks Keterangan Exact Match & Prefix Match
-    if prefix_count > 0:
+    total_matched = exact_count + prefix_count
+    match_rate = (exact_count / total_matched * 100) if total_matched else 0
+    with st.expander(f"Rincian tingkat kecocokan data 7KP — {match_rate:.1f}% Partnumber cocok persis"):
         st.markdown(
-            f'<p style="font-size:10px; color:#64748b; margin-top:2px;">'
-            f'<i>{exact_count:,} rows exact match + {prefix_count:,} rows via prefix matching</i></p>',
-            unsafe_allow_html=True)
+            f"- Kecocokan persis (Partnumber sama persis dengan master Pno7KP.xlsx): **{exact_count:,}**\n"
+            f"- Kecocokan melalui pendekatan prefix (kandidat substitusi produk, Pno7KP_Prefix.xlsx): **{prefix_count:,}**"
+        )
+
+    st.markdown("---")
+    st.markdown("### Penjelasan")
+    st.markdown(
+        "- **7 Key Product (7KP)** adalah tujuh kelompok produk prioritas (Brake Pad, Shock Absorber, Clutch, dan "
+        "kelompok lain sejenis) yang dipantau secara khusus terlepas dari kategori material aslinya.\n"
+        "- Baris **Komposisi (%)** pada tabel menunjukkan proporsi kontribusi tiap kelompok produk terhadap total "
+        "Order 7KP secara keseluruhan pada periode yang dipilih.\n"
+        "- **Kontributor Cabang per Kategori** menunjukkan Top 5 Cabang dengan kontribusi terbesar pada tiap kelompok "
+        "produk, untuk melihat apakah suatu kelompok produk digerakkan secara merata oleh banyak Cabang atau justru "
+        "sangat bergantung pada segelintir Cabang saja.\n"
+        "- Pencocokan Partnumber ke kelompok produk 7KP dilakukan dalam dua tahap: kecocokan persis terhadap master "
+        "Pno7KP.xlsx, dilanjutkan dengan pendekatan prefix (lima karakter awal Partnumber) untuk kandidat produk "
+        "substitusi yang belum terdaftar secara resmi."
+    )

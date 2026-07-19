@@ -92,9 +92,11 @@ def render(df_order_final, df_kalkerja, pilih_tahun, pilih_bulan):
     )
 
     st.markdown("---")
-    st.markdown("#### Penjelasan")
+    st.markdown("### Penjelasan")
     st.markdown(
-        "- **ODOM (One Million One Day)** — customer dianggap sehat apabila pola Order rutin ≥Rp1 juta/hari (~Rp30 juta/bulan) dengan basis data Order.\n"
-        "- **Rasio Aktif (%)** = berapa persen hari kerja yang benar-benar ada Order.\n"
-        "- Makin tinggi persennya, makin rutin order-nya — bukan numpuk di segelintir hari saja."
+        "- **ODOM (One Million One Day)** — customer dikategorikan sehat apabila pola Order-nya rutin dengan nilai "
+        "minimal Rp1 juta per hari aktif (setara ±Rp30 juta per bulan), dihitung dari data Order.\n"
+        "- **Rasio Aktif (%)** = persentase hari kerja yang benar-benar memiliki transaksi Order.\n"
+        "- Semakin tinggi Rasio Aktif, semakin merata sebaran transaksi Order sepanjang periode yang dipilih — "
+        "bukan terkonsentrasi hanya pada beberapa hari tertentu."
     )

@@ -58,6 +58,7 @@ with col3:
     - **Lead Time** — Durasi Order sampai Actual keluar gudang
     - **Fill Rate** — Kelengkapan Qty per pengiriman
     - **Status Fulfillment** — Status akhir tiap Order (akumulatif)
+    - **Komposisi Kategori** — Sebaran & growth revenue per kategori produk (Mat Group)
     """)
 
 b1, b2, b3 = st.columns(3)
@@ -69,7 +70,7 @@ with b2:
         st.switch_page("pages/02_Marketing_Program.py")
 with b3:
     if st.button("Buka Analisa Partnumber", use_container_width=True):
-        st.switch_page("pages/3_Analisa_Partnumber.py")
+        st.switch_page("pages/03_Analisa_Partnumber.py")
 
 col4, col5 = st.columns(2)
 

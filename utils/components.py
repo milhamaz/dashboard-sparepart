@@ -12,7 +12,7 @@ PAGE_REGISTRY = [
     ("home", "🏠 Home", "Dashboard.py"),
     ("financial", "📦 Laporan Financial", "pages/01_Laporan_Financial.py"),
     ("marketing", "📢 Marketing Program", "pages/02_Marketing_Program.py"),
-    ("partnumber", "🔍 Analisa Partnumber", "pages/3_Analisa_Partnumber.py"),
+    ("partnumber", "🔍 Analisa Partnumber", "pages/03_Analisa_Partnumber.py"),
     ("sdm", "👥 SDM", "pages/04_SDM.py"),
     ("customer", "🤝 Customer", "pages/05_Customer.py"),
 ]

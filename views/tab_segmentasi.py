@@ -31,23 +31,23 @@ _ARCHETYPE_ORDER = ["Portofolio Sehat", "Whale Hunter", "Rentan Ganda", "Perlu F
 _ARCHETYPE_META = {
     "Portofolio Sehat": {
         "icon": "🟢", "color": "#10b981", "bg": "rgba(16,185,129,0.15)",
-        "desc": "Active Ratio tinggi, Concentration rendah — portofolio digarap merata, tidak bergantung ke 1 akun.",
+        "desc": "Active Ratio tinggi, Concentration rendah — portofolio digarap secara merata dan tidak bergantung pada satu akun.",
     },
     "Whale Hunter": {
         "icon": "🐋", "color": "#2563eb", "bg": "rgba(37,99,235,0.15)",
-        "desc": "Active Ratio tinggi, Concentration tinggi — aktif ke portofolionya, tapi revenue mayoritas dari 1 customer besar.",
+        "desc": "Active Ratio tinggi, Concentration tinggi — portofolio digarap aktif, namun mayoritas revenue berasal dari satu customer besar.",
     },
     "Rentan Ganda": {
         "icon": "🚨", "color": "#ef4444", "bg": "rgba(239,68,68,0.15)",
-        "desc": "Active Ratio rendah, Concentration tinggi — risiko tertinggi: sedikit yang digarap DAN revenue numpuk di 1 akun.",
+        "desc": "Active Ratio rendah, Concentration tinggi — kategori dengan risiko tertinggi: sebagian besar portofolio tidak digarap, dan revenue terkonsentrasi pada satu akun.",
     },
     "Perlu Follow-up": {
         "icon": "🟡", "color": "#f59e0b", "bg": "rgba(245,158,11,0.15)",
-        "desc": "Active Ratio rendah, Concentration rendah — banyak akun di-assign tapi mayoritas dibiarkan tidak digarap.",
+        "desc": "Active Ratio rendah, Concentration rendah — banyak akun yang di-assign, namun mayoritas belum digarap secara aktif.",
     },
     "Sample Kecil": {
         "icon": "⚪", "color": "#94a3b8", "bg": "rgba(148,163,184,0.15)",
-        "desc": f"Assigned Customer <{_MIN_N_CUSTOMER} — Active Ratio & Top-1 Concentration terlalu gampang melenceng buat diklasifikasikan andal.",
+        "desc": f"Assigned Customer <{_MIN_N_CUSTOMER} — Active Ratio dan Top-1 Concentration terlalu mudah menyimpang sehingga belum dapat diklasifikasikan secara andal.",
     },
 }
 
@@ -251,21 +251,22 @@ def render(df_order_raw, df_order_final, df_supply_final, df_customer_master, pi
         "- **Segmentasi** mengelompokkan tiap Cabang/Salesman ke satu kategori berdasarkan 2 sumbu — **Active Ratio** "
         "(seberapa besar portofolio assigned yang benar-benar digarap) dan **Top-1 Concentration** (seberapa besar "
         "ketergantungan ke 1 customer terbesar) — bukan cuma ranking linear satu angka Productivity, supaya subjek "
-        "dengan strategi kerja yang beda (fokus banyak akun kecil vs fokus sedikit akun besar) tidak dibandingkan apel-ke-jeruk:\n"
+        "dengan strategi kerja yang berbeda (fokus banyak akun kecil vs fokus sedikit akun besar) tidak dibandingkan secara tidak setara:\n"
         f"{archetype_desc}\n"
-        "- Ambang 50%/50% dipakai sebagai titik awal — bisa disesuaikan begitu ada cukup histori buat lihat sebaran datanya.\n"
-        "- **Ini segmentasi rule-based (aturan tetap), bukan hasil model statistik** — dipilih supaya kategori tiap "
-        "subjek konsisten dari bulan ke bulan dan gampang dijelaskan ke siapapun. Lihat bagian **Validasi dengan "
-        "K-Means** di bawah buat cek apakah pembagian ini masih mewakili pola data yang sebenarnya atau sudah bergeser."
+        "- Ambang 50%/50% digunakan sebagai titik awal, dan dapat disesuaikan setelah tersedia cukup histori untuk melihat sebaran data yang sebenarnya.\n"
+        "- **Ini adalah segmentasi rule-based (aturan tetap), bukan hasil model statistik** — pendekatan ini dipilih agar kategori tiap "
+        "subjek konsisten dari bulan ke bulan dan mudah dijelaskan kepada siapa pun. Lihat bagian **Validasi dengan "
+        "K-Means** di bawah untuk memeriksa apakah pembagian ini masih mewakili pola data yang sebenarnya atau sudah bergeser."
     )
 
     with st.expander("🔬 Validasi dengan K-Means (Beta) — apakah kategori di atas mewakili pola data yang sebenarnya?"):
         st.caption(
             "K-Means di sini dijalankan dengan k=4 (disamakan dengan jumlah kategori rule-based di atas) pada 4 fitur "
-            "yang sama — Jumlah Customer & Actual di-log-transform dulu (biar gak didominasi Cabang/Salesman besar), "
-            "Active Ratio & Top-1 Concentration apa adanya — setelah distandardisasi. Subjek Sample Kecil dikecualikan, "
-            "sama seperti di Peta Segmentasi. Tiap cluster hasil K-Means diberi nama = kategori rule-based paling "
-            "dominan di anggotanya (majority vote), supaya hasilnya kebaca — bukan sekadar 'Cluster 0/1/2/3'."
+            "yang sama — Jumlah Customer dan Actual di-log-transform terlebih dahulu (agar tidak didominasi oleh "
+            "Cabang/Salesman berskala besar), sedangkan Active Ratio dan Top-1 Concentration digunakan apa adanya — "
+            "setelah distandardisasi. Subjek Sample Kecil dikecualikan, sama seperti pada Peta Segmentasi. Setiap "
+            "cluster hasil K-Means diberi nama sesuai kategori rule-based yang paling dominan di antara anggotanya "
+            "(majority vote), agar hasilnya mudah dibaca — bukan sekadar 'Cluster 0/1/2/3'."
         )
 
         kmeans_result = _run_kmeans_validation(df)
