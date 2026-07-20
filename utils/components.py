@@ -690,7 +690,9 @@ def render_topn_barh_chart(df, label_col, value_col, top_n, color, value_fmt, xa
 def render_bidirectional_barh_chart(df, label_col, left_col, right_col, left_name, right_name,
                                      left_color, right_color, value_fmt, key,
                                      xaxis_title=None, left_hover_extra=None, right_hover_extra=None,
-                                     left_value_label=None, right_value_label=None):
+                                     left_value_label=None, right_value_label=None,
+                                     bar_text_size=12, label_size=12, axis_title_size=14, legend_size=13,
+                                     gap_ratio=0.16):
     """Bar chart horizontal 2 arah dari titik tengah 0 — 1 metrik ke kiri (mis. Order), metrik
     lain ke kanan (mis. Actual), berbagi 1 sumbu magnitude yang sama (dicerminkan, bukan
     dual-axis) supaya 2 metrik per kategori langsung kebandingin panjang bar-nya. `df` sudah
@@ -700,6 +702,15 @@ def render_bidirectional_barh_chart(df, label_col, left_col, right_col, left_nam
     `left_value_label`/`right_value_label` opsional — kalau diisi, baris ke-2 hover jadi
     "{label}: {value}" (mis. "Pencapaian O/T: 105.3%") alih-alih cuma angka polos tanpa
     keterangan. Default None mempertahankan perilaku lama (dipakai tab_salesman_leaderboard.py).
+
+    `bar_text_size`/`label_size`/`axis_title_size`/`legend_size` opsional — default =
+    ukuran lama (12/12/14/13), tapi bisa disetel per-pemanggil (mis. Target Customer di
+    layar lebar). Sengaja pakai default agar tab lain yang belum oper argumen ini
+    (Salesman Leaderboard, Komposisi Growth) tetap persis seperti semula.
+
+    `gap_ratio` opsional (default 0.16) — lebar ruang kosong di tengah (tempat nama kategori
+    ditaruh di antara 2 bar), sebagai proporsi dari nilai bar terbesar. Dinaikin kalau nama
+    kategori panjang butuh lebih banyak ruang biar gak numpuk ke bar-nya (mis. nama Customer).
     """
     if df.empty:
         st.info("Tidak ada data untuk chart.")
@@ -710,7 +721,7 @@ def render_bidirectional_barh_chart(df, label_col, left_col, right_col, left_nam
     # Gap kosong di tengah (sekitar sumbu 0) — bukan buat spacing kosmetik, tapi reserved
     # space biar nama kategori (mis. Salesman) bisa ditaruh di tengah row, di antara 2 bar,
     # alih-alih numpuk di y-axis kiri seperti bar chart 1 arah biasa.
-    gap = raw_max * 0.16
+    gap = raw_max * gap_ratio
     outer_max = raw_max * 1.15 + gap
 
     def _hovertext(row, col, extra_cols, value_label):
@@ -725,7 +736,7 @@ def render_bidirectional_barh_chart(df, label_col, left_col, right_col, left_nam
         x=-df[left_col], y=df[label_col], base=-gap, orientation="h", name=left_name,
         marker_color=left_color,
         text=[value_fmt(v) for v in df[left_col]],
-        textposition="auto", textfont=dict(color="#f8fafc", size=12),
+        textposition="auto", textfont=dict(color="#f8fafc", size=bar_text_size),
         hovertext=[_hovertext(row, left_col, left_hover_extra, left_value_label) for _, row in df.iterrows()],
         hovertemplate="%{hovertext}<extra></extra>",
     ))
@@ -733,7 +744,7 @@ def render_bidirectional_barh_chart(df, label_col, left_col, right_col, left_nam
         x=df[right_col], y=df[label_col], base=gap, orientation="h", name=right_name,
         marker_color=right_color,
         text=[value_fmt(v) for v in df[right_col]],
-        textposition="auto", textfont=dict(color="#f8fafc", size=12),
+        textposition="auto", textfont=dict(color="#f8fafc", size=bar_text_size),
         hovertext=[_hovertext(row, right_col, right_hover_extra, right_value_label) for _, row in df.iterrows()],
         hovertemplate="%{hovertext}<extra></extra>",
     ))
@@ -742,7 +753,7 @@ def render_bidirectional_barh_chart(df, label_col, left_col, right_col, left_nam
         fig.add_annotation(
             x=0, y=row[label_col], xref="x", yref="y", xanchor="center", yanchor="middle",
             text=f"<b>{row[label_col]}</b>", showarrow=False,
-            font=dict(color="#f8fafc", size=12),
+            font=dict(color="#f8fafc", size=label_size),
         )
 
     fig.update_layout(
@@ -750,12 +761,12 @@ def render_bidirectional_barh_chart(df, label_col, left_col, right_col, left_nam
         height=70 + (len(df) * 48),
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
         xaxis=dict(
-            title=dict(text=xaxis_title, font=dict(color="white", size=14)) if xaxis_title else None,
+            title=dict(text=xaxis_title, font=dict(color="white", size=axis_title_size)) if xaxis_title else None,
             showticklabels=False, showgrid=False, zeroline=False,
             range=[-outer_max, outer_max],
         ),
         yaxis=dict(showticklabels=False, autorange="reversed"),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, font=dict(color="white", size=13)),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, font=dict(color="white", size=legend_size)),
         hoverlabel=dict(bgcolor="#1e293b", font_color="white", font_size=13),
         margin=dict(l=10, r=30, t=50, b=10),
     )
@@ -909,8 +920,8 @@ def render_quadrant_chart(df, label_col, x_col, y_col, size_col, category_col, c
     fig.update_layout(
         height=520,
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-        xaxis=dict(title=dict(text=x_title, font=dict(color="white", size=14)), tickfont=dict(color="white", size=12), gridcolor="#333333", range=[0, 100]),
-        yaxis=dict(title=dict(text=y_title, font=dict(color="white", size=14)), tickfont=dict(color="white", size=12), gridcolor="#333333", range=[0, 100]),
+        xaxis=dict(title=dict(text=x_title, font=dict(color="white", size=14)), tickfont=dict(color="white", size=12), gridcolor="#333333"),
+        yaxis=dict(title=dict(text=y_title, font=dict(color="white", size=14)), tickfont=dict(color="white", size=12), gridcolor="#333333"),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, font=dict(color="white", size=12)),
         hoverlabel=dict(bgcolor="#1e293b", font_color="white", font_size=13),
         margin=dict(l=10, r=10, t=40, b=10),
@@ -1425,7 +1436,7 @@ def build_scope_title(base_title, pilih_cabang, all_cabang_list, pilih_bulan, al
     return f"{base_title} {' '.join(tags)}" if tags else base_title
 
 
-def render_card(icon, title, value, sub, accent_color=None):
+def render_card(icon, title, value, sub, accent_color=None, compact=False):
     """Return HTML string untuk metric card standar. `icon` boleh string kosong ""
     (card tanpa ikon) — tidak menyisakan spasi nyasar di depan title.
 
@@ -1433,12 +1444,17 @@ def render_card(icon, title, value, sub, accent_color=None):
     warna title/sub ikut accent itu (bukan amber default di CSS class), dipakai buat
     card yang perlu dibedakan visual per kategori (mis. archetype Segmentasi). Default
     None = tampilan lama persis, gak ada perubahan buat card lain yang sudah ada.
+
+    `compact=True` mengecilkan font value (24px -> 19px lewat class .card-compact di
+    styles.py) — buat tab dengan value berupa teks/nama panjang yang di layar lebar terasa
+    terlalu dominan (mis. Target Customer). Default False = tampilan lama.
     """
     card_title = f"{icon} {title}" if icon else title
+    card_class = "custom-card card-compact" if compact else "custom-card"
     card_style = f' style="border-left: 4px solid {accent_color};"' if accent_color else ""
     text_style = f' style="color:{accent_color};"' if accent_color else ""
     return (
-        f'<div class="custom-card"{card_style}>'
+        f'<div class="{card_class}"{card_style}>'
         f'<div class="card-title"{text_style}>{card_title}</div>'
         f'<div class="card-value">{value}</div>'
         f'<div class="card-sub"{text_style}>{sub}</div>'

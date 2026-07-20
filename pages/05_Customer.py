@@ -2,11 +2,14 @@
 # 🤝 PAGE: CUSTOMER (RETENTION/CHURN & ALERT PENURUNAN)
 # ============================================================
 import streamlit as st
-from utils.data_loader import load_and_process_data, compute_data_fingerprint
+from utils.data_loader import load_and_process_data, compute_data_fingerprint, load_part_master
 from utils.filters import render_top_filters
 from utils.styles import inject_styles, fmt_rp
 from utils.components import render_nav_bar, render_footer
-from views import tab_customer_retention, tab_customer_alert, tab_suggested_status, tab_customer_target, tab_odom
+from views import (
+    tab_customer_retention, tab_customer_alert, tab_suggested_status, tab_customer_target,
+    tab_odom, tab_crosssell, tab_diversifikasi,
+)
 
 st.set_page_config(page_title="Customer", page_icon="🤝", layout="wide", initial_sidebar_state="collapsed")
 
@@ -27,9 +30,11 @@ render_nav_bar("customer")
 # ── Filter General ──
 df_order_final, df_supply_final, pilih_tahun, pilih_bulan, pilih_cabang, pilih_jenis, pilih_kelas, pilih_area, cabang_list = render_top_filters(df_order, df_supply, page_key="customer")
 
+df_part_master = load_part_master(compute_data_fingerprint())
+
 # ── Tabs ──
-tab_target_customer_ui, tab_odom_ui, tab_retention_ui, tab_alert_ui, tab_suggested_status_ui = st.tabs(
-    ["📊 Target Customer", "📅 ODOM", "🔄 Retention & Churn", "🚨 Alert Penurunan", "🎯 Suggested Status"]
+tab_target_customer_ui, tab_odom_ui, tab_retention_ui, tab_alert_ui, tab_crosssell_ui, tab_diversifikasi_ui, tab_suggested_status_ui = st.tabs(
+    ["📊 Target Customer", "📅 ODOM", "🔄 Retention & Churn", "🚨 Alert Penurunan", "🧩 Cross-sell Gap", "🌈 Diversifikasi Produk", "🎯 Suggested Status"]
 )
 
 with tab_target_customer_ui:
@@ -46,6 +51,12 @@ with tab_retention_ui:
 
 with tab_alert_ui:
     tab_customer_alert.render(df_supply_final, pilih_tahun)
+
+with tab_crosssell_ui:
+    tab_crosssell.render(df_supply_final, df_part_master, pilih_tahun)
+
+with tab_diversifikasi_ui:
+    tab_diversifikasi.render(df_supply_final, df_part_master, pilih_tahun)
 
 with tab_suggested_status_ui:
     tab_suggested_status.render(

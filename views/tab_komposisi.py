@@ -1,14 +1,16 @@
 # ============================================================
 # 🧬 TAB: KOMPOSISI KATEGORI (Mat Group — TGP/AVANZA/TMO/dst)
 # ============================================================
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from utils.data_loader import list_bulan_standar
 from utils.matgroup_engine import compute_matgroup_link, MATGROUP_ORDER, MATGROUP_COLORS
 from utils.components import (
-    render_card, build_pivot, render_bidirectional_barh_chart, cleanup_selection,
-    auto_table_height, TOTAL_ROW_STYLE, hitung_growth,
+    render_card, render_growth_card, build_pivot, render_bar_chart, render_bidirectional_barh_chart,
+    cleanup_selection, auto_table_height, TOTAL_ROW_STYLE, hitung_growth,
 )
 from utils.styles import fmt_rp, fmt_rp_full, fmt_pct, highlight_growth_pct
 
@@ -17,7 +19,13 @@ TOP_N_SUBJECT = 10
 SUBJECT_DIMENSIONS = {"Cabang": "Cabang", "Salesman": "Salesman_Name", "Customer": "Customer_Label"}
 
 
+@st.cache_data(show_spinner=False)
 def _prep_scope(df_supply, df_part_master):
+    """Di-cache karena normalisasi string 4 kolom di bawah jalan di SELURUH baris Supply —
+    tanpa cache, ini dieksekusi ulang tiap rerun halaman (st.tabs merender semua isi tab
+    setiap interaksi), padahal hasilnya sama selama sumber datanya tidak berubah. Panggilan
+    compute_matgroup_link pun ikut pindah ke dalam cache ini, jadi hashing df_supply besar
+    cuma terjadi sekali di level fungsi ini, bukan dobel."""
     df, stats = compute_matgroup_link(df_supply, df_part_master, partnumber_col="Partnumber")
     df["Cabang"] = df["Cabang"].astype(str).str.strip()
     df["Salesman_Name"] = df["Salesman_Name"].astype(str).str.strip().str.upper()
@@ -169,6 +177,97 @@ def _render_subject_composition(scope):
     st.dataframe(styled, use_container_width=True, height=min(auto_table_height(len(pivot)), 600))
 
 
+def _render_health_section(scope, pilih_tahun):
+    """Monitoring drift kesehatan coverage klasifikasi — pola transparansi yang sama dengan
+    "X% data berhasil dipasangkan" di tab Fill Rate, tapi dilihat PER BULAN: kalau %
+    Unclassified pelan-pelan naik dari bulan ke bulan, itu sinyal ada Partnumber baru yang
+    belum di-maintain di part_master.xlsx — ketahuan proaktif dari sini, bukan nemu
+    kebetulan pas angka kategorinya sudah aneh."""
+    g = scope.groupby(["Bulan_Num", "Bulan"])
+    monthly = g["Actual"].sum().rename("Total_Actual").to_frame()
+    monthly["N_Rows"] = g.size()
+
+    un_scope = scope[scope["Mat_Group"] == "Unclassified"]
+    un_g = un_scope.groupby(["Bulan_Num", "Bulan"])
+    monthly["Un_Actual"] = un_g["Actual"].sum()
+    monthly["Un_Rows"] = un_g.size()
+
+    monthly = monthly.fillna(0).reset_index().sort_values("Bulan_Num")
+    monthly["Pct_Rows"] = np.where(monthly["N_Rows"] > 0, monthly["Un_Rows"] / monthly["N_Rows"] * 100, 0.0)
+    monthly["Pct_Value"] = np.where(monthly["Total_Actual"] > 0, monthly["Un_Actual"] / monthly["Total_Actual"] * 100, 0.0)
+
+    if monthly.empty:
+        st.info("Tidak ada data bulanan untuk monitoring klasifikasi.")
+        return
+
+    # ── Sinyal drift: naik 3 bulan beruntun, ATAU bulan terakhir melonjak jauh di atas
+    # kebiasaan bulan-bulan sebelumnya (2x median) dan sudah lewat 1% ──
+    pct_series = monthly["Pct_Rows"].tolist()
+    rising_3mo = len(pct_series) >= 3 and pct_series[-3] < pct_series[-2] < pct_series[-1]
+    baseline = float(np.median(pct_series[:-1])) if len(pct_series) >= 2 else 0.0
+    last_pct = pct_series[-1]
+    spiking = len(pct_series) >= 2 and last_pct >= max(baseline * 2, 1.0)
+
+    if rising_3mo or spiking:
+        alasan = "naik 3 bulan beruntun" if rising_3mo else f"melonjak ke {last_pct:.1f}% (kebiasaan sebelumnya ±{baseline:.1f}%)"
+        st.warning(
+            f"📈 **Persentase baris Unclassified {alasan}** — kemungkinan ada Partnumber baru yang belum "
+            "di-maintain di `part_master.xlsx`. Gunakan worklist di bawah untuk menambahkannya."
+        )
+    else:
+        st.caption(
+            f"✅ Persentase Unclassified stabil — bulan terakhir {last_pct:.1f}% baris "
+            f"({monthly['Pct_Value'].iloc[-1]:.1f}% dari sisi nilai)."
+        )
+
+    fmt_pct_label = lambda v: f"{v:.1f}%".replace(".", ",")
+    fig = render_bar_chart(
+        monthly["Bulan"].tolist(),
+        [
+            {"values": monthly["Pct_Rows"].tolist(), "name": "% Baris Unclassified", "color": "#64748b",
+             "hover_fmt": fmt_pct_label, "text_fmt": fmt_pct_label, "text_size": 12},
+            {"values": monthly["Pct_Value"].tolist(), "name": "% Nilai Unclassified", "color": "#f59e0b",
+             "hover_fmt": fmt_pct_label, "text_fmt": fmt_pct_label, "text_size": 12},
+        ],
+        yaxis_title="% Unclassified", height=380,
+    )
+    st.plotly_chart(fig, use_container_width=True, key="chart_komposisi_health")
+    st.caption(
+        "**% Baris** = sinyal maintenance (berapa banyak transaksi yang Partnumber-nya tidak dikenali), "
+        "**% Nilai** = sinyal dampak (berapa besar Rupiah yang kategorinya tidak diketahui)."
+    )
+
+    # ── Worklist: Partnumber Unclassified terbesar — daftar konkret yang perlu ditambahkan
+    # ke part_master.xlsx, diurutkan dari dampak nilai terbesar ──
+    if un_scope.empty:
+        st.success("Tidak ada Partnumber Unclassified pada scope ini — part_master.xlsx sudah menutup semua transaksi. 🎉")
+        return
+
+    st.markdown("##### Worklist — Partnumber Unclassified dengan nilai terbesar")
+    work = un_scope.groupby("Partnumber").agg(
+        Total_Actual=("Actual", "sum"),
+        Total_Qty=("Qty", "sum"),
+        N_Baris=("Actual", "size"),
+        Bulan_Terakhir_Num=("Bulan_Num", "max"),
+    ).reset_index()
+    work["Bulan Terakhir Muncul"] = work["Bulan_Terakhir_Num"].map(
+        lambda n: list_bulan_standar[int(n) - 1] if 1 <= int(n) <= 12 else "-"
+    )
+    work = work.reindex(work["Total_Actual"].abs().sort_values(ascending=False).index).head(15)
+    display = work.rename(columns={
+        "Total_Actual": "Total Actual", "Total_Qty": "Total Qty", "N_Baris": "Jumlah Baris",
+    })[["Partnumber", "Total Actual", "Total Qty", "Jumlah Baris", "Bulan Terakhir Muncul"]]
+    st.dataframe(
+        display.style.format({"Total Actual": fmt_rp_full, "Total Qty": "{:,.0f}", "Jumlah Baris": "{:,.0f}"}),
+        use_container_width=True, hide_index=True,
+        height=min(auto_table_height(len(display)), 560),
+    )
+    st.caption(
+        f"Top 15 dari {un_scope['Partnumber'].nunique():,} Partnumber Unclassified di tahun {pilih_tahun} — "
+        "tambahkan kode-kode ini (beserta mat_group-nya) ke `part_master.xlsx`, kategori akan otomatis terisi saat data di-refresh."
+    )
+
+
 def render(df_supply, df_part_master):
     if df_supply is None or df_supply.empty:
         st.warning("Data Supply belum siap.")
@@ -226,13 +325,7 @@ def render(df_supply, df_part_master):
     with c2:
         st.markdown(render_card("🏆", "Kategori Dominan", kategori_dominan, f"{pct_dominan:.1f}% dari total Actual", accent_color=MATGROUP_COLORS.get(kategori_dominan)), unsafe_allow_html=True)
     with c3:
-        growth_color = "#10b981" if growth_nasional >= 0 else "#ef4444"
-        st.markdown(
-            f'<div class="custom-card"><div class="card-title">Growth YoY Nasional</div>'
-            f'<div class="card-value" style="color:{growth_color}">{growth_nasional:+.1f}%</div>'
-            f'<div class="card-sub">Actual {pilih_tahun} vs {pilih_tahun - 1}</div></div>',
-            unsafe_allow_html=True,
-        )
+        st.markdown(render_growth_card("", "Growth YoY Nasional", growth_nasional, f"Actual {pilih_tahun} vs {pilih_tahun - 1}"), unsafe_allow_html=True)
     with c4:
         st.markdown(render_card("❔", "Baris Belum Terklasifikasi", fmt_pct(unclassified_pct), "dari total baris Actual di scope ini"), unsafe_allow_html=True)
 
@@ -248,6 +341,9 @@ def render(df_supply, df_part_master):
 
     st.markdown(f"#### Komposisi per Subjek — {pilih_tahun}")
     _render_subject_composition(scope)
+
+    st.markdown(f"#### Kesehatan Klasifikasi — Monitoring Unclassified {pilih_tahun}")
+    _render_health_section(scope, pilih_tahun)
 
     match_rate = (stats["n_total"] - stats["n_unclassified"]) / stats["n_total"] * 100 if stats["n_total"] else 0
     with st.expander(f"Rincian tingkat kecocokan Partnumber ke Kategori Produk — {match_rate:.1f}% berhasil diklasifikasikan"):
@@ -276,6 +372,10 @@ def render(df_supply, df_part_master):
         "komposisi antar-subjek dapat dibandingkan langsung, terlepas dari perbedaan skala revenue masing-masing — "
         "tabel di bawahnya menampilkan nilai Rupiah aktual untuk seluruh subjek pada scope yang dipilih, dapat dicari "
         "lewat kotak pencarian saat dimensi Customer aktif.\n"
+        "- **Kesehatan Klasifikasi** memantau persentase baris/nilai Unclassified per bulan — apabila angkanya "
+        "merangkak naik dari bulan ke bulan, itu sinyal proaktif bahwa ada Partnumber baru yang belum di-maintain di "
+        "`part_master.xlsx` (bukan ditemukan kebetulan saat angka kategori sudah terlihat aneh). Worklist di bawahnya "
+        "berisi daftar konkret Partnumber yang perlu ditambahkan, diurutkan dari dampak nilai terbesar.\n"
         "- Data pada tab ini bersumber dari **Actual (Supply)**, konsisten dengan metrik revenue yang digunakan pada "
         "tab-tab lain di halaman ini."
     )

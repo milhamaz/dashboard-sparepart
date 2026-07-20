@@ -8,8 +8,10 @@ from utils.styles import fmt_rp_full as FMT_RP
 
 
 def _highlight_decline(val):
-    """Merah kalau penurunan makin dalam, oranye kalau masih ringan — threshold ambil dari
-    slider di atas, jadi warnanya relatif terhadap ambang yang user pilih sendiri."""
+    """Merah kalau penurunan sudah ≥50% (lebih dari separuh nilai tahun lalu hilang),
+    oranye kalau masih di bawah itu. Batas 50% ini TETAP — sengaja tidak mengikuti slider
+    ambang di atas, supaya makna warna konsisten antar sesi apapun ambang yang dipilih
+    (slider cuma menentukan siapa yang MASUK daftar, bukan seberapa parah warnanya)."""
     return "color: #ef4444; font-weight: bold;" if val <= -50 else "color: #f59e0b; font-weight: bold;"
 
 

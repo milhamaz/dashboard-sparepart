@@ -41,7 +41,7 @@ def render(df_supply_final, pilih_tahun):
     with c1:
         st.markdown(render_card("", "Net Sales", FMT_RP(total_net), f"Gross Sales: {FMT_RP(total_gross)}"), unsafe_allow_html=True)
     with c2:
-        st.markdown(render_card("", "COGS (Estimasi)", FMT_RP(total_cogs), "Simulasi diskon Toyota → TASTI"), unsafe_allow_html=True)
+        st.markdown(render_card("", "COGS (Estimasi)", FMT_RP(total_cogs), "Diskon Toyota→TASTI per kategori"), unsafe_allow_html=True)
     with c3:
         profit_color = "#10b981" if total_profit >= 0 else "#ef4444"
         st.markdown(render_card("", "Profit", f'<span style="color:{profit_color}">{FMT_RP(total_profit)}</span>', f"Tahun {pilih_tahun}"), unsafe_allow_html=True)

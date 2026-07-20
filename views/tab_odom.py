@@ -3,7 +3,7 @@
 # ============================================================
 import streamlit as st
 
-from utils.components import render_card, render_styled_table, auto_table_height, compute_odom_status
+from utils.components import render_card, render_styled_table, auto_table_height, compute_odom_status, render_tile_filter
 from utils.styles import fmt_rp_full as FMT_RP
 
 _CARD_META = {
@@ -58,11 +58,13 @@ def render(df_order_final, df_kalkerja, pilih_tahun, pilih_bulan):
     st.markdown("#### Daftar Customer — Status ODOM")
     col_filter, col_search = st.columns([1, 2])
     with col_filter:
-        pilih_status_label = st.pills(
-            "Filter Status ODOM", _STATUS_FILTER_OPTIONS, selection_mode="multi",
-            default=_STATUS_FILTER_OPTIONS, key="odom_status_filter_pills",
+        pilih_status_label = render_tile_filter(
+            "Filter Status ODOM", _STATUS_FILTER_OPTIONS, key="odom_status_filter_pills",
         )
     with col_search:
+        # Spacer menyamakan tinggi awal kotak search dengan baris checkbox "Pilih Semua"
+        # milik render_tile_filter di kolom kiri (pola sama dgn tab Segmentasi).
+        st.markdown('<div style="height:0.55rem"></div>', unsafe_allow_html=True)
         search_query = st.text_input(
             "Cari Customer (kode/nama)", key="odom_search_query",
             placeholder="Ketik kode atau nama customer...",

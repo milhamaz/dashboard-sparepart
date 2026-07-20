@@ -21,6 +21,7 @@ Sisa yang tidak ketemu sama sekali di-tag "Unclassified" — SENGAJA tidak dibua
 total revenue tetap rekonsiliasi dengan angka di tab lain (Performance, dst); cuma
 kategorinya yang belum diketahui, bukan datanya yang hilang.
 """
+import pandas as pd
 import streamlit as st
 
 PREFIX_LEN = 5
@@ -40,7 +41,14 @@ MATGROUP_COLORS = {
 def compute_matgroup_link(df, df_part_master, partnumber_col="Partnumber"):
     """Return (df_with_Mat_Group, stats). `stats` berisi hitungan tiap tahap pencocokan
     (n_substitusi/n_exact/n_prefix/n_unclassified) buat expander transparansi — pola yang
-    sama dengan `stats` di leadtime_engine.compute_order_actual_link()."""
+    sama dengan `stats` di leadtime_engine.compute_order_actual_link().
+
+    3 tahap pencocokan dijalankan di level PARTNUMBER UNIK (puluhan ribu), bukan per baris
+    transaksi (jutaan) — hasil kategorinya deterministik per Partnumber, jadi cukup
+    diklasifikasi sekali per kode lalu di-map balik ke tiap baris. `stats` tetap dihitung
+    per BARIS transaksi (bukan per kode unik) supaya angka di expander transparansi tetap
+    sebanding dengan "Total baris data Actual" seperti semula.
+    """
     cols_stats = ["n_total", "n_substitusi", "n_exact", "n_prefix", "n_unclassified"]
 
     if df.empty or df_part_master is None or df_part_master.empty:
@@ -54,7 +62,7 @@ def compute_matgroup_link(df, df_part_master, partnumber_col="Partnumber"):
         .drop_duplicates("part_number_substitusi", keep="first")
         .set_index("part_number_substitusi")["mat_group"]
     )
-    exact_map = pm.set_index("part_number")["mat_group"]
+    exact_map = pm.drop_duplicates("part_number", keep="first").set_index("part_number")["mat_group"]
     prefix_map = (
         pm.assign(_prefix=pm["part_number"].str[:PREFIX_LEN])
         .groupby("_prefix")["mat_group"]
@@ -64,19 +72,31 @@ def compute_matgroup_link(df, df_part_master, partnumber_col="Partnumber"):
     result = df.copy()
     pno = result[partnumber_col].astype(str).str.upper().str.strip()
 
-    mg = pno.map(sub_map)
-    n_substitusi = int(mg.notna().sum())
+    # ── Klasifikasi per Partnumber unik ──
+    uniq = pd.Index(pno.unique())
+    u_pno = uniq.to_series()
 
-    need_exact = mg.isna()
-    mg.loc[need_exact] = pno.loc[need_exact].map(exact_map)
-    n_exact = int(mg.notna().sum()) - n_substitusi
+    mg_u = u_pno.map(sub_map)
+    stage_u = pd.Series(pd.NA, index=uniq, dtype=object)
+    stage_u[mg_u.notna()] = "substitusi"
 
-    need_prefix = mg.isna()
-    mg.loc[need_prefix] = pno.loc[need_prefix].str[:PREFIX_LEN].map(prefix_map)
-    n_prefix = int(mg.notna().sum()) - n_substitusi - n_exact
+    need = mg_u.isna()
+    mg_u.loc[need] = u_pno[need].map(exact_map)
+    stage_u[need & mg_u.notna()] = "exact"
 
-    n_unclassified = int(mg.isna().sum())
-    result["Mat_Group"] = mg.fillna("Unclassified")
+    need = mg_u.isna()
+    mg_u.loc[need] = u_pno[need].str[:PREFIX_LEN].map(prefix_map)
+    stage_u[need & mg_u.notna()] = "prefix"
+
+    # ── Map balik ke tiap baris transaksi ──
+    result["Mat_Group"] = pno.map(mg_u).fillna("Unclassified")
+    row_stage = pno.map(stage_u)
+    stage_counts = row_stage.value_counts()
+
+    n_substitusi = int(stage_counts.get("substitusi", 0))
+    n_exact = int(stage_counts.get("exact", 0))
+    n_prefix = int(stage_counts.get("prefix", 0))
+    n_unclassified = len(df) - n_substitusi - n_exact - n_prefix
 
     stats = dict(zip(cols_stats, [len(df), n_substitusi, n_exact, n_prefix, n_unclassified]))
     return result, stats

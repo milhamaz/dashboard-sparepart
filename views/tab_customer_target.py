@@ -74,13 +74,13 @@ def render(df_order_raw, df_supply_final, df_target, df_customer_master, pilih_t
 
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        st.markdown(render_card("🥇", title_ot, best_ot_row["Nama_Customer"], f"{best_ot_row['O/T']:.1f}%"), unsafe_allow_html=True)
+        st.markdown(render_card("🥇", title_ot, best_ot_row["Nama_Customer"], f"{best_ot_row['O/T']:.1f}%", compact=True), unsafe_allow_html=True)
     with c2:
-        st.markdown(render_card("🥇", title_at, best_at_row["Nama_Customer"], f"{best_at_row['A/T']:.1f}%"), unsafe_allow_html=True)
+        st.markdown(render_card("🥇", title_at, best_at_row["Nama_Customer"], f"{best_at_row['A/T']:.1f}%", compact=True), unsafe_allow_html=True)
     with c3:
-        st.markdown(render_card("✅", title_capai, f"{customer_capai}", f"dari {len(customer_target)} customer"), unsafe_allow_html=True)
+        st.markdown(render_card("✅", title_capai, f"{customer_capai}", f"dari {len(customer_target)} customer", compact=True), unsafe_allow_html=True)
     with c4:
-        st.markdown(render_card("⚠️", title_belum, f"{customer_belum}", f"dari {len(customer_target)} customer"), unsafe_allow_html=True)
+        st.markdown(render_card("⚠️", title_belum, f"{customer_belum}", f"dari {len(customer_target)} customer", compact=True), unsafe_allow_html=True)
 
     # % Kontribusi Cabang/Nasional — dipakai cuma buat tooltip hover chart, sama pola kayak
     # tab_salesman_leaderboard.py, dihitung terpisah buat basis Order & basis Actual.
@@ -112,6 +112,7 @@ def render(df_order_raw, df_supply_final, df_target, df_customer_master, pilih_t
         left_color="#f97316", right_color="#2563eb", value_fmt=lambda v: f"{v:.1f}%",
         key="chart_target_customer_top10", xaxis_title="% (O/T kiri • A/T kanan)",
         left_value_label="Pencapaian O/T", right_value_label="Pencapaian A/T",
+        bar_text_size=10, label_size=11, axis_title_size=12, legend_size=11, gap_ratio=0.30,
         left_hover_extra=[
             ("Pct_Cabang_Order", "Kontribusi Cabang", lambda v: f"{v:.1f}%"),
             ("Pct_Nasional_Order", "Kontribusi Nasional", lambda v: f"{v:.1f}%"),

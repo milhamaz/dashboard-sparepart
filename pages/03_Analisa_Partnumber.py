@@ -6,7 +6,7 @@ import pandas as pd
 from utils.data_loader import load_and_process_data, compute_data_fingerprint, load_part_master, list_bulan_standar
 from utils.styles import inject_styles
 from utils.components import TOTAL_ROW_STYLE, auto_table_height, build_pivot, cleanup_selection, render_nav_bar, render_footer
-from views import tab_claim, tab_goodwill, tab_leadtime, tab_fillrate, tab_statusfulfillment, tab_komposisi
+from views import tab_claim, tab_goodwill, tab_leadtime, tab_fillrate, tab_statusfulfillment, tab_komposisi, tab_substitusi
 
 st.set_page_config(page_title="Analisa Partnumber", page_icon="🔍", layout="wide", initial_sidebar_state="collapsed")
 
@@ -280,8 +280,8 @@ def render_pivot_section(df_src, value_col, aggfunc, key_prefix):
     )
 
 
-tab_lebar, tab_dalam, tab_claim_ui, tab_goodwill_ui, tab_leadtime_ui, tab_fillrate_ui, tab_statusfulfillment_ui, tab_komposisi_ui = st.tabs(
-    ["📐 Kelebaran", "📏 Kedalaman", "📤 Claim", "♻️ Goodwill", "⏱️ Lead Time", "🚚 Fill Rate", "📊 Status Fulfillment", "🧬 Komposisi Kategori"]
+tab_lebar, tab_dalam, tab_claim_ui, tab_goodwill_ui, tab_leadtime_ui, tab_fillrate_ui, tab_statusfulfillment_ui, tab_komposisi_ui, tab_substitusi_ui = st.tabs(
+    ["📐 Kelebaran", "📏 Kedalaman", "📤 Claim", "♻️ Goodwill", "⏱️ Lead Time", "🚚 Fill Rate", "📊 Status Fulfillment", "🧬 Komposisi Kategori", "🔁 Substitusi Partnumber"]
 )
 
 with tab_lebar:
@@ -319,5 +319,8 @@ with tab_statusfulfillment_ui:
 
 with tab_komposisi_ui:
     tab_komposisi.render(df_supply, df_part_master)
+
+with tab_substitusi_ui:
+    tab_substitusi.render(df_supply, df_part_master)
 
 render_footer()

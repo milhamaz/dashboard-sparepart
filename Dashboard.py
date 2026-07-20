@@ -59,6 +59,7 @@ with col3:
     - **Fill Rate** — Kelengkapan Qty per pengiriman
     - **Status Fulfillment** — Status akhir tiap Order (akumulatif)
     - **Komposisi Kategori** — Sebaran & growth revenue per kategori produk (Mat Group)
+    - **Substitusi Partnumber** — Migrasi volume kode lama → kode baru & kesehatannya
     """)
 
 b1, b2, b3 = st.columns(3)
@@ -94,6 +95,8 @@ with col5:
     - **ODOM** — Kestabilan order harian (One Million One Day)
     - **Retention & Churn** — Customer bertahan/hilang/baru YoY
     - **Alert Penurunan** — Customer aktif dengan penurunan signifikan
+    - **Cross-sell Gap** — Kategori lazim di peer yang belum digarap per customer
+    - **Diversifikasi Produk** — Segmentasi ketergantungan customer ke 1 kategori
     - **Suggested Status** — Rekomendasi reaktivasi customer tidak aktif
     """)
 
