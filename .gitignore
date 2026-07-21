@@ -1,4 +1,5 @@
 TASTI/
+TASTI_SYNTHETIC/parquet/
 __pycache__/
 *.pyc
 .streamlit/

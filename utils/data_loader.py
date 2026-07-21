@@ -13,7 +13,10 @@ import os
 # Konfigurasi path & konstanta
 # ────────────────────────────────────────────────────────────
 
-BASE_DIR = Path(os.getenv("DASHBOARD_DATA_DIR", r"D:\Dashboard\TASTI"))
+_DEFAULT_DATA = Path(__file__).resolve().parent.parent / "TASTI"
+if not _DEFAULT_DATA.exists():
+    _DEFAULT_DATA = Path(__file__).resolve().parent.parent / "TASTI_SYNTHETIC"
+BASE_DIR = Path(os.getenv("DASHBOARD_DATA_DIR", str(_DEFAULT_DATA)))
 PARQUET_DIR = BASE_DIR / "parquet"
 CONVERT_META = PARQUET_DIR / "convert_meta.json"
 

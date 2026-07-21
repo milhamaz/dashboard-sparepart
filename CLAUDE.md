@@ -15,6 +15,12 @@ python scripts/convert_to_parquet.py          # convert jika belum fresh
 python scripts/convert_to_parquet.py --force   # paksa rebuild
 ```
 
+Synthetic data generator (untuk deploy publik):
+```bash
+python scripts/generate_synthetic.py          # output ke TASTI_SYNTHETIC/
+python scripts/generate_synthetic.py --seed 42 --scale 0.6
+```
+
 ## Struktur project
 
 ```
@@ -39,6 +45,9 @@ utils/
   *_engine.py                 # Business logic engines (target, matgroup, leadtime, dll)
 scripts/
   convert_to_parquet.py       # CLI converter CSV/Excel → Parquet
+  generate_synthetic.py      # Synthetic data generator (deploy publik)
+  data_params.json           # Statistical parameters (aggregate only, no PII)
+TASTI_SYNTHETIC/             # Generated fake data (committed for deploy)
 ```
 
 ## Data flow
@@ -88,6 +97,9 @@ TASTI/*.xlsx       ─┴→ (load, merge,   →  (14 file, auto-generated)
 - **Nama file `pages/NN_*.py`** harus match dengan judul halaman.
 - **Setiap halaman baru** harus ditambahkan card + button di `Dashboard.py`.
 - **Semua data confidential** — jangan commit isi TASTI/ atau screenshot berisi data real.
+- **`TASTI_SYNTHETIC/`** berisi data sintetik yang aman untuk commit & deploy publik.
+- **`DASHBOARD_DATA_DIR`** env var override data folder; tanpa env var, auto-fallback
+  `TASTI` → `TASTI_SYNTHETIC`.
 - **`_PARQUET_SCHEMA_VERSION`** di `data_loader.py` harus di-bump saat menambah/menghapus kolom
   di pipeline, supaya Parquet cache lama otomatis ter-invalidate.
 
