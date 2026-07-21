@@ -349,15 +349,17 @@ def gen_targets(params, cabang_df, supply_df):
     """Generate Tgt_Cabang.xlsx — target per cabang per month, reverse-engineered
     from actual supply so achievement rates match real distributions."""
     years = params["years"]
-    ach_mean = params.get("ach_mean", 1.05)
-    ach_std = params.get("ach_std", 0.1)
     rng = np.random.default_rng(99)
 
-    # Compute actual per cabang-month from supply
     supply_df = supply_df.copy()
     supply_df["_Actual"] = supply_df["Qty"] * supply_df["Retail_Price"] / 1.11
-
     actuals = supply_df.groupby(["_Cabang", "_Year", "_Month"])["_Actual"].sum()
+
+    # Per-cabang bias: some strong (ach ~1.2), some weak (ach ~0.85)
+    cab_bias = {}
+    for _, cab_row in cabang_df.iterrows():
+        cab = cab_row["Cabang"]
+        cab_bias[cab] = rng.normal(1.0, 0.15)  # 0.7 ~ 1.3
 
     records = []
     for year in years:
@@ -366,7 +368,8 @@ def gen_targets(params, cabang_df, supply_df):
             for _, cab_row in cabang_df.iterrows():
                 cab = cab_row["Cabang"]
                 actual = actuals.get((cab, year, month), 0)
-                ach = max(0.5, rng.normal(ach_mean, ach_std))
+                # Combine cabang bias + monthly noise
+                ach = cab_bias[cab] * max(0.4, rng.normal(1.0, 0.12))
                 target = round(actual / ach) if actual > 0 else 0
                 records.append({
                     "Tahun": year,
