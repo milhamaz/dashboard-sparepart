@@ -26,6 +26,103 @@ BULAN_MAP = {
 MATGROUPS = ["TGP", "AVANZA", "TOOLS & TGA", "DYNA/ARPI", "AC",
              "TGB", "TMO", "CHEMICAL", "T-OPT", "BUSI"]
 
+# ── Part name pools per matgroup ──────────────────────────────
+PART_NAMES_BY_MG = {
+    "TGP": [
+        "BRAKE PAD FR", "BRAKE PAD RR", "DISC BRAKE", "CLUTCH DISC", "CLUTCH COVER",
+        "WATER PUMP ASSY", "TIMING BELT", "V-BELT", "FAN BELT", "RADIATOR CAP",
+        "THERMOSTAT", "GASKET HEAD", "PISTON SET", "RING SET", "BEARING",
+        "SEAL OIL", "VALVE IN", "VALVE EX", "FILTER FUEL", "FILTER AIR",
+        "FILTER OIL", "ELEMENT ASSY", "SHOCK ABSORBER FR", "SHOCK ABSORBER RR",
+        "TIE ROD END", "BALL JOINT", "RACK END", "BUSH ARM", "LAMP HEAD",
+        "LAMP TAIL", "WIPER BLADE", "LINK STAB", "SPRING COIL", "HOSE RADIATOR",
+    ],
+    "AVANZA": [
+        "BRAKE PAD AVZ", "FILTER OIL AVZ", "FILTER AIR AVZ", "SHOCK FR AVZ",
+        "SHOCK RR AVZ", "BALL JOINT AVZ", "TIE ROD AVZ", "DISC BRAKE AVZ",
+        "WATER PUMP AVZ", "CLUTCH SET AVZ", "BEARING AVZ", "LAMP HEAD AVZ",
+    ],
+    "TOOLS & TGA": [
+        "TOOL SET", "JACK ASSY", "WRENCH SET", "SOCKET SET", "FLOOR MAT",
+        "SEAT COVER", "MUD GUARD", "DOOR VISOR", "CARGO NET", "BODY COVER",
+    ],
+    "DYNA/ARPI": [
+        "BRAKE LINING DYNA", "FILTER OIL DYNA", "FILTER FUEL DYNA", "BEARING DYNA",
+        "SEAL OIL DYNA", "GASKET HEAD DYNA", "SPRING LEAF DYNA", "SHOCK DYNA",
+        "BUSH DYNA", "ELEMENT DYNA", "PUMP FUEL DYNA", "HOSE DYNA",
+    ],
+    "AC": [
+        "COMPRESSOR AC", "CONDENSOR AC", "EVAPORATOR AC", "EXPANSION VALVE",
+        "DRYER AC", "BLOWER MOTOR", "CABIN FILTER", "HOSE AC HIGH",
+        "MAGNETIC CLUTCH", "THERMOSTAT AC", "RELAY AC",
+    ],
+    "TGB": [
+        "BATTERY NS40", "BATTERY NS60", "BATTERY NS70", "BATTERY 55D23L",
+        "BATTERY 80D26L", "BATTERY NS40ZL", "BATTERY 46B24L",
+    ],
+    "TMO": [
+        "TMO MINERAL 1L", "TMO MINERAL 4L", "TMO SEMI SYN 4L", "TMO FULL SYN 4L",
+        "TMO DIESEL 5L", "TMO MINERAL 5L", "TMO ATF", "TMO GEAR OIL",
+        "TMO BRAKE FLUID", "TMO POWER STEERING",
+    ],
+    "CHEMICAL": [
+        "GLASS CLEANER", "ENGINE FLUSH", "COOLANT MERAH", "COOLANT HIJAU",
+        "LUBRICANT SPRAY", "CARB CLEANER", "BRAKE CLEANER", "RUST REMOVER",
+        "POLISH COMPOUND", "WAX COATING",
+    ],
+    "T-OPT": [
+        "SPOILER FR", "SPOILER RR", "SIDE SKIRT", "HOOD MOULDING",
+        "REAR BUMPER EXT", "FR BUMPER EXT", "GARNISH", "EMBLEM",
+        "STRIPE SET", "AERO KIT", "DIFFUSER",
+    ],
+    "BUSI": [
+        "SPARK PLUG STD", "SPARK PLUG IRIDIUM", "SPARK PLUG PLATINUM",
+        "GLOW PLUG", "IGNITION COIL", "PLUG CAP",
+    ],
+}
+
+# ── Monthly achievement multipliers (controls A/T narrative) ──
+MONTH_ACH = {
+    1: 1.10,   # Jan — A/T high (supply spillover from Dec orders)
+    2: 1.02,
+    3: 1.06,
+    4: 0.90,   # Apr — post-Eid struggle
+    5: 0.92,   # May — still weak
+    6: 1.04,
+    7: 1.01,
+    8: 0.93,   # Aug — seasonal dip
+    9: 1.03,
+    10: 1.10,  # Oct — Q4 peak starts
+    11: 1.14,  # Nov — peak
+    12: 1.18,  # Dec — peak (highest supply month)
+}
+
+# ── Order monthly modifiers (controls O/T vs A/T divergence) ──
+ORDER_INCLUDE_RATE = {1: 0.85}  # fraction of Jan supply rows that appear as Jan orders
+ORDER_UNFULFILLED_SCALE = {
+    1: 0.0,   # Jan — almost no unfulfilled (very few new orders)
+    4: 0.3,   # Apr — fewer orders
+    5: 0.4,   # May — fewer orders
+    8: 0.5,   # Aug — fewer orders
+    10: 1.3,  # Oct — orders ramp up
+    11: 1.5,  # Nov — peak
+    12: 2.5,  # Dec — heavy order-pulling for next year
+}
+
+# ── Customer activity types (realistic retention/churn) ────────
+CUST_TYPE_DIST = [
+    ("loyal",      0.40, 0.95, 0.85),  # (type, fraction, yearly_prob, monthly_prob)
+    ("regular",    0.25, 0.80, 0.60),
+    ("occasional", 0.20, 0.55, 0.35),
+    ("rare",       0.15, 0.30, 0.20),
+]
+
+# ── Gebyur campaign codes ─────────────────────────────────────
+GEBYUR_CAMPAIGNS = [
+    "GBR24-01", "GBR24-02", "GBR24-03",
+    "GBR25-01", "GBR25-02", "GBR25-03",
+]
+
 # ── Raw CSV columns (what data_loader expects BEFORE merge) ────
 RAW_SUPPLY_COLS = [
     "Invoice_No", "SO_No", "Invoice_Date", "Customer_No", "Customer_Name",
@@ -160,7 +257,8 @@ def gen_partnumbers(params, rng, n_total=8000):
 
     records, used = [], set()
     for mg, cnt in zip(mg_list, counts):
-        for _ in range(cnt):
+        name_pool = PART_NAMES_BY_MG.get(mg, [mg])
+        for i in range(cnt):
             while True:
                 pno = (f"{rng.integers(10, 99)}"
                        f"{rng.choice(list('ABCDEFGHJKLMNPQRSTUVWXYZ'))}"
@@ -170,7 +268,9 @@ def gen_partnumbers(params, rng, n_total=8000):
                 if pno not in used:
                     used.add(pno)
                     break
-            records.append({"Partnumber": pno, "Mat_Group": mg})
+            base_name = name_pool[i % len(name_pool)]
+            part_name = f"{base_name} {rng.integers(1, 99):02d}"
+            records.append({"Partnumber": pno, "Mat_Group": mg, "Part_Name": part_name})
     return pd.DataFrame(records)
 
 
@@ -205,6 +305,28 @@ def gen_supply(params, cabang_df, customers_df, salesman_df, parts_df, rng):
             chosen[0] = "TGP"
         cust_mg[c["Kode_Customer"]] = chosen
 
+    # Pre-assign customer activity types & schedules
+    type_labels = [t[0] for t in CUST_TYPE_DIST]
+    type_probs = np.array([t[1] for t in CUST_TYPE_DIST])
+    type_probs /= type_probs.sum()
+    type_yearly = {t[0]: t[2] for t in CUST_TYPE_DIST}
+    type_monthly = {t[0]: t[3] for t in CUST_TYPE_DIST}
+
+    cust_types = {}
+    cust_schedule = {}  # (cid, year) -> set of active months
+    for _, c in customers_df.iterrows():
+        cid = c["Kode_Customer"]
+        ctype = rng.choice(type_labels, p=type_probs)
+        cust_types[cid] = ctype
+        for year in years:
+            max_m = 7 if year == max(years) else 12
+            if rng.random() < type_yearly[ctype]:
+                n_months = max(1, int(rng.binomial(max_m, type_monthly[ctype])))
+                active = set(rng.choice(range(1, max_m + 1), size=min(n_months, max_m), replace=False).tolist())
+                cust_schedule[(cid, year)] = active
+            else:
+                cust_schedule[(cid, year)] = set()
+
     # Salesman lookup by cabang
     sal_by_cab = salesman_df.groupby("Cabang").apply(
         lambda g: g[["Salesman_Code", "Salesman_Name"]].values.tolist()
@@ -236,7 +358,7 @@ def gen_supply(params, cabang_df, customers_df, salesman_df, parts_df, rng):
             for _, cust in customers_df.iterrows():
                 cno = cust["Kode_Customer"]
                 cab = cust["Cabang"]
-                if rng.random() > 0.6:
+                if month not in cust_schedule.get((cno, year), set()):
                     continue
 
                 mgs = cust_mg.get(cno, ["TGP"])
@@ -280,64 +402,82 @@ def gen_supply(params, cabang_df, customers_df, salesman_df, parts_df, rng):
                         "_Cabang": cab,
                         "_Year": year,
                         "_Month": month,
+                        "_Mat_Group": mg,
                     })
 
     return pd.DataFrame(rows)
 
 
 def gen_order(supply_df, params, rng):
-    """Generate order data from supply with fill-rate variance.
-    Only RAW_ORDER_COLS are written to CSV."""
+    """Generate order data from supply with fill-rate variance, monthly
+    seasonal variation, and Gebyur (SO_Type C + Campaign_Code) for TMO."""
     fill_rates = params.get("fill_rate", {})
     rows = []
     so_ctr = 50000
 
     for (year, month), grp in supply_df.groupby(["_Year", "_Month"]):
         fr = fill_rates.get(str(int(year)), 0.85)
+        m = int(month)
+        include_rate = ORDER_INCLUDE_RATE.get(m, 1.0)
+        unfulfilled_scale = ORDER_UNFULFILLED_SCALE.get(m, 1.0)
 
-        # Fulfilled orders = every supply row
+        # Fulfilled orders (with monthly inclusion rate)
         for _, r in grp.iterrows():
+            if rng.random() > include_rate:
+                continue
             so_ctr += 1
+            # Gebyur: ~8% of TMO orders get SO_Type "C" + Campaign_Code
+            so_type = r["SO_Type"]
+            campaign = ""
+            if r.get("_Mat_Group") == "TMO" and rng.random() < 0.08:
+                so_type = "C"
+                campaign = rng.choice(GEBYUR_CAMPAIGNS)
             rows.append({
                 "SO_No": r["SO_No"],
                 "SO_No_TPOS": f"TPOS{so_ctr:08d}",
                 "SO_Date": r["Invoice_Date"],
                 "Customer_No": r["Customer_No"],
                 "Customer_Name": r["Customer_Name"],
-                "SO_Type": r["SO_Type"],
+                "SO_Type": so_type,
                 "Salesman_Code": r["Salesman_Code"],
                 "Salesman_Name": r["Salesman_Name"],
                 "Partnumber": r["Partnumber"],
                 "Qty": r["Qty"],
                 "Retail_Price": r["Retail_Price"],
                 "Scp_Disc": int(rng.integers(0, 6)),
-                "Campaign_Code": "",
+                "Campaign_Code": campaign,
                 "_Year": year,
                 "_Month": month,
             })
 
-        # Unfulfilled orders
-        n_extra = int(len(grp) * (1 / fr - 1))
+        # Unfulfilled orders (scaled by month)
+        base_extra = int(len(grp) * (1 / fr - 1))
+        n_extra = max(0, int(base_extra * unfulfilled_scale))
         if n_extra > 0:
             sample = grp.sample(n=min(n_extra, len(grp)), replace=True,
                                 random_state=int(rng.integers(1e6)))
             for _, r in sample.iterrows():
                 so_ctr += 1
                 qty = max(1, int(r["Qty"] * rng.uniform(0.5, 2.0)))
+                so_type = r["SO_Type"]
+                campaign = ""
+                if r.get("_Mat_Group") == "TMO" and rng.random() < 0.08:
+                    so_type = "C"
+                    campaign = rng.choice(GEBYUR_CAMPAIGNS)
                 rows.append({
-                    "SO_No": f"SO{int(year) % 100:02d}{int(month):02d}{so_ctr:06d}",
+                    "SO_No": f"SO{int(year) % 100:02d}{m:02d}{so_ctr:06d}",
                     "SO_No_TPOS": f"TPOS{so_ctr:08d}",
                     "SO_Date": r["Invoice_Date"],
                     "Customer_No": r["Customer_No"],
                     "Customer_Name": r["Customer_Name"],
-                    "SO_Type": r["SO_Type"],
+                    "SO_Type": so_type,
                     "Salesman_Code": r["Salesman_Code"],
                     "Salesman_Name": r["Salesman_Name"],
                     "Partnumber": r["Partnumber"],
                     "Qty": qty,
                     "Retail_Price": r["Retail_Price"],
                     "Scp_Disc": int(rng.integers(0, 6)),
-                    "Campaign_Code": "",
+                    "Campaign_Code": campaign,
                     "_Year": year,
                     "_Month": month,
                 })
@@ -347,7 +487,7 @@ def gen_order(supply_df, params, rng):
 
 def gen_targets(params, cabang_df, supply_df):
     """Generate Tgt_Cabang.xlsx — target per cabang per month, reverse-engineered
-    from actual supply so achievement rates match real distributions."""
+    from actual supply so achievement rates follow MONTH_ACH narrative."""
     years = params["years"]
     rng = np.random.default_rng(99)
 
@@ -355,11 +495,11 @@ def gen_targets(params, cabang_df, supply_df):
     supply_df["_Actual"] = supply_df["Qty"] * supply_df["Retail_Price"] / 1.11
     actuals = supply_df.groupby(["_Cabang", "_Year", "_Month"])["_Actual"].sum()
 
-    # Per-cabang bias: some strong (ach ~1.2), some weak (ach ~0.85)
+    # Per-cabang bias: some strong (ach ~1.15), some weak (~0.90)
     cab_bias = {}
     for _, cab_row in cabang_df.iterrows():
         cab = cab_row["Cabang"]
-        cab_bias[cab] = rng.normal(1.0, 0.15)  # 0.7 ~ 1.3
+        cab_bias[cab] = rng.normal(1.0, 0.10)
 
     records = []
     for year in years:
@@ -368,8 +508,9 @@ def gen_targets(params, cabang_df, supply_df):
             for _, cab_row in cabang_df.iterrows():
                 cab = cab_row["Cabang"]
                 actual = actuals.get((cab, year, month), 0)
-                # Combine cabang bias + monthly noise
-                ach = cab_bias[cab] * max(0.4, rng.normal(1.0, 0.12))
+                month_ach = MONTH_ACH.get(month, 1.0)
+                noise = max(0.5, rng.normal(1.0, 0.08))
+                ach = month_ach * cab_bias[cab] * noise
                 target = round(actual / ach) if actual > 0 else 0
                 records.append({
                     "Tahun": year,
@@ -566,6 +707,7 @@ def main():
     pm = parts_df.copy()
     pm_out = pd.DataFrame({
         "part_number": pm["Partnumber"],
+        "part_name": pm["Part_Name"],
         "part_number_substitusi": "",
         "mat_group": pm["Mat_Group"],
     })

@@ -8,7 +8,7 @@ from utils.styles import inject_styles, fmt_rp
 from utils.components import render_nav_bar, render_footer
 from views import (
     tab_customer_retention, tab_customer_alert, tab_suggested_status, tab_customer_target,
-    tab_odom, tab_crosssell, tab_diversifikasi,
+    tab_crosssell, tab_diversifikasi,
 )
 
 st.set_page_config(page_title="Customer", page_icon="🤝", layout="wide", initial_sidebar_state="collapsed")
@@ -33,8 +33,8 @@ df_order_final, df_supply_final, pilih_tahun, pilih_bulan, pilih_cabang, pilih_j
 df_part_master = load_part_master(compute_data_fingerprint())
 
 # ── Tabs ──
-tab_target_customer_ui, tab_odom_ui, tab_retention_ui, tab_alert_ui, tab_crosssell_ui, tab_diversifikasi_ui, tab_suggested_status_ui = st.tabs(
-    ["📊 Target Customer", "📅 ODOM", "🔄 Retention & Churn", "🚨 Alert Penurunan", "🧩 Cross-sell Gap", "🌈 Diversifikasi Produk", "🎯 Suggested Status"]
+tab_target_customer_ui, tab_retention_ui, tab_alert_ui, tab_crosssell_ui, tab_diversifikasi_ui, tab_suggested_status_ui = st.tabs(
+    ["📊 Target Customer", "🔄 Retention & Churn", "🚨 Alert Penurunan", "🧩 Cross-sell Gap", "🌈 Diversifikasi Produk", "🎯 Suggested Status"]
 )
 
 with tab_target_customer_ui:
@@ -42,9 +42,6 @@ with tab_target_customer_ui:
         df_order, df_supply_final, df_target, df_customer_master, pilih_tahun, pilih_bulan,
         pilih_jenis, pilih_kelas, pilih_area, pilih_cabang, cabang_list, fmt_rp,
     )
-
-with tab_odom_ui:
-    tab_odom.render(df_order_final, df_kalkerja, pilih_tahun, pilih_bulan)
 
 with tab_retention_ui:
     tab_customer_retention.render(df_supply_final, pilih_tahun)

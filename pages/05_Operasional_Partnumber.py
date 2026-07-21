@@ -7,7 +7,6 @@ from utils.data_loader import load_and_process_data, compute_data_fingerprint, l
 from utils.matgroup_engine import MATGROUP_ORDER
 from utils.styles import inject_styles
 from utils.components import TOTAL_ROW_STYLE, auto_table_height, build_pivot, cleanup_selection, render_nav_bar, render_footer
-from views import tab_claim, tab_goodwill, tab_leadtime, tab_fillrate, tab_statusfulfillment, tab_substitusi
 
 st.set_page_config(page_title="Operasional Partnumber", page_icon="🔧", layout="wide", initial_sidebar_state="collapsed")
 
@@ -374,8 +373,8 @@ def render_pivot_section(df_src, value_col, aggfunc, key_prefix, enable_matgroup
         )
 
 
-tab_lebar, tab_dalam, tab_claim_ui, tab_goodwill_ui, tab_leadtime_ui, tab_fillrate_ui, tab_statusfulfillment_ui, tab_substitusi_ui = st.tabs(
-    ["📐 Kelebaran", "📏 Kedalaman", "📤 Claim", "♻️ Goodwill", "⏱️ Lead Time", "🚚 Fill Rate", "📊 Status Fulfillment", "🔁 Substitusi Partnumber"]
+tab_lebar, tab_dalam = st.tabs(
+    ["📐 Kelebaran", "📏 Kedalaman"]
 )
 
 with tab_lebar:
@@ -396,22 +395,5 @@ with tab_dalam:
         "- **Kelebaran** dan **Kedalaman** sebaiknya dibaca berdampingan: subjek dengan Kelebaran tinggi namun Kedalaman rendah cenderung membeli banyak jenis produk dalam jumlah kecil-kecil, sedangkan subjek dengan Kelebaran rendah namun Kedalaman tinggi cenderung membeli sedikit jenis produk namun dalam jumlah besar."
     )
 
-with tab_claim_ui:
-    tab_claim.render(df_supply)
-
-with tab_goodwill_ui:
-    tab_goodwill.render(df_supply)
-
-with tab_leadtime_ui:
-    tab_leadtime.render(df_order, df_supply)
-
-with tab_fillrate_ui:
-    tab_fillrate.render(df_order, df_supply)
-
-with tab_statusfulfillment_ui:
-    tab_statusfulfillment.render(df_order, df_supply)
-
-with tab_substitusi_ui:
-    tab_substitusi.render(df_supply, df_part_master)
 
 render_footer()

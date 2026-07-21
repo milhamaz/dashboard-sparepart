@@ -29,11 +29,10 @@ pages/
   01_Laporan_Financial.py     # Performance, Pacing, TMO, Chemical, TGB, T-OPT, COGS & Profit
   02_SDM.py                   # Target Cabang, Target Salesman, Cabang/Salesman Leaderboard,
                               #   Productivity, Segmentasi
-  03_Customer.py              # Customer Target, Retention, Alert, Suggested Status, ODOM,
-                              #   Cross-sell, Diversifikasi, Substitusi, Health Score
+  03_Customer.py              # Customer Target, Retention & Churn, Alert, Cross-sell Gap,
+                              #   Diversifikasi, Suggested Status
   04_Marketing_Program.py     # 7KP, Item D (DProg), Gebyur, Kombo Servis
-  05_Operasional_Partnumber.py# Kelebaran, Kedalaman, Claim, Goodwill, Lead Time, Fill Rate,
-                              #   Status Fulfillment, Substitusi Partnumber
+  05_Operasional_Partnumber.py# Kelebaran, Kedalaman
   06_Analisa_Produk.py        # Komposisi Kategori, Profitabilitas, Moving Analysis
 views/
   tab_*.py                    # Satu file = satu tab, export fungsi render()
