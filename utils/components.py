@@ -11,10 +11,11 @@ from utils.data_loader import list_bulan_standar
 PAGE_REGISTRY = [
     ("home", "🏠 Home", "Dashboard.py"),
     ("financial", "📦 Laporan Financial", "pages/01_Laporan_Financial.py"),
-    ("marketing", "📢 Marketing Program", "pages/02_Marketing_Program.py"),
-    ("partnumber", "🔍 Analisa Partnumber", "pages/03_Analisa_Partnumber.py"),
-    ("sdm", "👥 SDM", "pages/04_SDM.py"),
-    ("customer", "🤝 Customer", "pages/05_Customer.py"),
+    ("sdm", "👥 SDM", "pages/02_SDM.py"),
+    ("customer", "🤝 Customer", "pages/03_Customer.py"),
+    ("marketing", "📢 Marketing Program", "pages/04_Marketing_Program.py"),
+    ("operasional", "🔧 Operasional Partnumber", "pages/05_Operasional_Partnumber.py"),
+    ("produk", "📊 Analisa Produk", "pages/06_Analisa_Produk.py"),
 ]
 
 
@@ -1216,6 +1217,8 @@ def render_value_breakdown(df, value_col, key_prefix, fmt_cell=None, subj_option
 
     if subj_dim == "Cabang":
         subj_col = "Cabang"
+    elif subj_dim == "Material Group":
+        subj_col = "Mat_Group"
     elif subj_dim == "Salesman":
         df_scope = df_scope.copy()
         df_scope["Salesman_Label"] = df_scope["Salesman_Name"].astype(str).str.strip().str.upper()

@@ -6,6 +6,7 @@ import streamlit as st
 from utils.components import (
     append_total_row, render_card, render_styled_table, render_value_breakdown,
 )
+from utils.matgroup_engine import MATGROUP_ORDER, MATGROUP_COLORS
 from utils.styles import fmt_rp_full as FMT_RP, highlight_growth_pct as _highlight_profit_pct
 
 
@@ -78,6 +79,6 @@ def render(df_supply_final, pilih_tahun):
         has_total_row=True,
     )
 
-    # ── Breakdown per Cabang/Customer/Salesman ──
-    st.markdown("#### Breakdown Profit per Cabang/Customer/Salesman")
-    render_value_breakdown(df_scope, "Profit", key_prefix="cogs", fmt_cell=FMT_RP, subj_options=["Cabang", "Customer", "Salesman"])
+    # ── Breakdown per Cabang/Customer/Salesman/Material Group ──
+    st.markdown("#### Breakdown Profit per Cabang/Customer/Salesman/Material Group")
+    render_value_breakdown(df_scope, "Profit", key_prefix="cogs", fmt_cell=FMT_RP, subj_options=["Cabang", "Customer", "Salesman", "Material Group"])

@@ -21,6 +21,7 @@ st.markdown(
 
 st.markdown('<hr class="thick-divider">', unsafe_allow_html=True)
 
+# ── Row 1: Financial · SDM · Customer ──────────────────────
 col1, col2, col3 = st.columns(3)
 
 with col1:
@@ -38,45 +39,6 @@ with col1:
 
 with col2:
     st.markdown("""
-    ### Marketing Program
-    Monitoring program marketing aktif:
-    - **7KP** — 7 Key Product (Brake Pad, Shock Absorber, Clutch, dll)
-    - **Item D** — Program diskon bulanan + burn analysis
-    - **Gebyur** — Volume TMO Campaign & budget linkage
-    &nbsp;
-    &nbsp;
-    """)
-
-with col3:
-    st.markdown("""
-    ### Analisa Partnumber
-    Analisis mendalam per Partnumber & Claim Goodwill:
-    - **Kelebaran** — Unique Partnumber yang di-order
-    - **Kedalaman** — Total Qty yang di-order
-    - **Claim** — Barang retur reject
-    - **Goodwill** — Barang retur reject layak jual
-    - **Lead Time** — Durasi Order sampai Actual keluar gudang
-    - **Fill Rate** — Kelengkapan Qty per pengiriman
-    - **Status Fulfillment** — Status akhir tiap Order (akumulatif)
-    - **Komposisi Kategori** — Sebaran & growth revenue per kategori produk (Mat Group)
-    - **Substitusi Partnumber** — Migrasi volume kode lama → kode baru & kesehatannya
-    """)
-
-b1, b2, b3 = st.columns(3)
-with b1:
-    if st.button("Buka Laporan Financial", use_container_width=True):
-        st.switch_page("pages/01_Laporan_Financial.py")
-with b2:
-    if st.button("Buka Marketing Program", use_container_width=True):
-        st.switch_page("pages/02_Marketing_Program.py")
-with b3:
-    if st.button("Buka Analisa Partnumber", use_container_width=True):
-        st.switch_page("pages/03_Analisa_Partnumber.py")
-
-col4, col5 = st.columns(2)
-
-with col4:
-    st.markdown("""
     ### SDM
     Performa internal perusahaan — orang & cabang:
     - **Target Cabang** — Achievement semua cabang vs target
@@ -87,7 +49,7 @@ with col4:
     - **Segmentasi** — Archetype Cabang/Salesman (rule-based + validasi K-Means)
     """)
 
-with col5:
+with col3:
     st.markdown("""
     ### Customer
     Performa eksternal — kesehatan basis customer:
@@ -100,12 +62,61 @@ with col5:
     - **Suggested Status** — Rekomendasi reaktivasi customer tidak aktif
     """)
 
-b4, b5 = st.columns(2)
-with b4:
+b1, b2, b3 = st.columns(3)
+with b1:
+    if st.button("Buka Laporan Financial", use_container_width=True):
+        st.switch_page("pages/01_Laporan_Financial.py")
+with b2:
     if st.button("Buka SDM", use_container_width=True):
-        st.switch_page("pages/04_SDM.py")
-with b5:
+        st.switch_page("pages/02_SDM.py")
+with b3:
     if st.button("Buka Customer", use_container_width=True):
-        st.switch_page("pages/05_Customer.py")
+        st.switch_page("pages/03_Customer.py")
+
+# ── Row 2: Marketing · Operasional Partnumber · Analisa Produk
+col4, col5, col6 = st.columns(3)
+
+with col4:
+    st.markdown("""
+    ### Marketing Program
+    Monitoring program marketing aktif:
+    - **7KP** — 7 Key Product (Brake Pad, Shock Absorber, Clutch, dll)
+    - **Item D** — Program diskon bulanan + burn analysis
+    - **Gebyur** — Volume TMO Campaign & budget linkage
+    """)
+
+with col5:
+    st.markdown("""
+    ### Operasional Partnumber
+    Operasional & service-level per Partnumber:
+    - **Kelebaran** — Unique Partnumber yang di-order
+    - **Kedalaman** — Total Qty yang di-order
+    - **Claim** — Barang retur reject
+    - **Goodwill** — Barang retur reject layak jual
+    - **Lead Time** — Durasi Order sampai Actual keluar gudang
+    - **Fill Rate** — Kelengkapan Qty per pengiriman
+    - **Status Fulfillment** — Status akhir tiap Order (akumulatif)
+    - **Substitusi** — Migrasi volume kode lama → kode baru & kesehatannya
+    """)
+
+with col6:
+    st.markdown("""
+    ### Analisa Produk
+    Analisis strategis produk berdasarkan kategori (Mat Group):
+    - **Komposisi Kategori** — Sebaran & growth revenue per kategori produk
+    - **Profitabilitas** — Radar stat, waterfall kontribusi, & bubble chart per kategori
+    - **Moving Analysis** — Klasifikasi VFM/FM/Medium/SM/VSM/Dead & treemap revenue
+    """)
+
+b4, b5, b6 = st.columns(3)
+with b4:
+    if st.button("Buka Marketing Program", use_container_width=True):
+        st.switch_page("pages/04_Marketing_Program.py")
+with b5:
+    if st.button("Buka Operasional Partnumber", use_container_width=True):
+        st.switch_page("pages/05_Operasional_Partnumber.py")
+with b6:
+    if st.button("Buka Analisa Produk", use_container_width=True):
+        st.switch_page("pages/06_Analisa_Produk.py")
 
 render_footer()

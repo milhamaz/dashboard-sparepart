@@ -1,23 +1,24 @@
 # ============================================================
-# 🔍 PAGE: ANALISA PARTNUMBER
+# 🔧 PAGE: OPERASIONAL PARTNUMBER
 # ============================================================
 import streamlit as st
 import pandas as pd
 from utils.data_loader import load_and_process_data, compute_data_fingerprint, load_part_master, list_bulan_standar
+from utils.matgroup_engine import MATGROUP_ORDER
 from utils.styles import inject_styles
 from utils.components import TOTAL_ROW_STYLE, auto_table_height, build_pivot, cleanup_selection, render_nav_bar, render_footer
-from views import tab_claim, tab_goodwill, tab_leadtime, tab_fillrate, tab_statusfulfillment, tab_komposisi, tab_substitusi
+from views import tab_claim, tab_goodwill, tab_leadtime, tab_fillrate, tab_statusfulfillment, tab_substitusi
 
-st.set_page_config(page_title="Analisa Partnumber", page_icon="🔍", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Operasional Partnumber", page_icon="🔧", layout="wide", initial_sidebar_state="collapsed")
 
 inject_styles()
 
 st.markdown(
-    '<h1 style="color: white; text-align: center; font-size: 24px;">Analisa Partnumber</h1>',
+    '<h1 style="color: white; text-align: center; font-size: 24px;">Operasional Partnumber</h1>',
     unsafe_allow_html=True
 )
 
-render_nav_bar("partnumber")
+render_nav_bar("operasional")
 
 # ── Load Data (cuma butuh df_order) ──
 (df_order, df_supply, df_target, df_tmo_lookup, df_topt_lookup,
@@ -114,12 +115,73 @@ SUBJECT_SORT_MODE = {
 }
 
 
-def render_pivot_section(df_src, value_col, aggfunc, key_prefix):
-    col_dim1, col_dim2 = st.columns(2)
+def _build_matgroup_pivot(data, subj_col, time_col, time_order, value_col, aggfunc, sort_mode):
+    """Pivot dengan Mat_Group sebagai sub-row per subjek."""
+    d = data.dropna(subset=[subj_col, time_col, value_col, "Mat_Group"])
+    if d.empty:
+        return pd.DataFrame()
+
+    pivot = pd.pivot_table(
+        d, index=[subj_col, "Mat_Group"], columns=time_col, values=value_col,
+        aggfunc=aggfunc, fill_value=0,
+    )
+    pivot = pivot.reindex(columns=time_order, fill_value=0)
+
+    if aggfunc == "nunique":
+        totals = d.groupby([subj_col, "Mat_Group"])[value_col].nunique()
+        pivot["TOTAL"] = totals.reindex(pivot.index).fillna(0).astype(int)
+    else:
+        pivot["TOTAL"] = pivot[time_order].sum(axis=1)
+
+    subj_totals = pivot.groupby(level=0)["TOTAL"].sum()
+    if sort_mode == "alpha":
+        ordered_subjs = sorted(subj_totals.index.tolist())
+    else:
+        ordered_subjs = subj_totals.sort_values(ascending=False).index.tolist()
+
+    mg_rank = {m: i for i, m in enumerate(MATGROUP_ORDER)}
+    new_idx = []
+    for subj in ordered_subjs:
+        if subj not in pivot.index.get_level_values(0):
+            continue
+        subj_mgs = pivot.loc[subj].index.tolist()
+        subj_mgs.sort(key=lambda m: mg_rank.get(m, 999))
+        new_idx.extend((subj, mg) for mg in subj_mgs)
+
+    pivot = pivot.loc[new_idx]
+
+    grand = {}
+    for col in time_order:
+        col_data = d[d[time_col] == col]
+        grand[col] = col_data[value_col].nunique() if aggfunc == "nunique" else col_data[value_col].sum()
+    grand["TOTAL"] = d[value_col].nunique() if aggfunc == "nunique" else d[value_col].sum()
+
+    grand_df = pd.DataFrame(grand, index=pd.MultiIndex.from_tuples([("TOTAL", "")]))
+    pivot = pd.concat([pivot, grand_df])
+
+    return pivot
+
+
+def render_pivot_section(df_src, value_col, aggfunc, key_prefix, enable_matgroup=False):
+    has_mg = enable_matgroup and "Mat_Group" in df_src.columns
+    if has_mg:
+        col_dim1, col_dim2, col_mg_mode = st.columns(3)
+    else:
+        col_dim1, col_dim2 = st.columns(2)
+
     with col_dim1:
         time_dim = st.selectbox("🕐 Dimensi Waktu", ["Per Tahun", "Per Kuartal", "Per Bulan"], key=f"waktu_{key_prefix}")
     with col_dim2:
         subj_dim = st.selectbox("🧑‍💼 Dimensi Subjek", list(SUBJECT_DIMENSIONS.keys()), key=f"subjek_{key_prefix}")
+
+    show_matgroup = False
+    if has_mg:
+        with col_mg_mode:
+            mg_mode = st.radio(
+                "📊 Mode Matgroup", ["Tanpa Matgroup", "Dengan Matgroup"],
+                index=0, horizontal=True, key=f"mg_mode_{key_prefix}",
+            )
+            show_matgroup = mg_mode == "Dengan Matgroup"
 
     subj_col = SUBJECT_DIMENSIONS[subj_dim]
     tahun_list = sorted(df_src["Tahun"].dropna().unique().tolist())
@@ -224,12 +286,19 @@ def render_pivot_section(df_src, value_col, aggfunc, key_prefix):
             with dd_slot["salesman"]:
                 pilih_salesman = st.multiselect("Filter Salesman", salesman_options, key=salesman_key, placeholder="Semua (klik untuk filter)")
 
-    if pilih_area:  # empty = tidak difilter (tampilkan semua area)
+    if pilih_area:
         df_filtered = df_filtered[df_filtered["Area"].isin(pilih_area)]
     if subj_dim in ("Per Salesman", "Per Customer") and pilih_cabang:
         df_filtered = df_filtered[df_filtered["Cabang"].isin(pilih_cabang)]
     if subj_dim == "Per Customer" and pilih_salesman:
         df_filtered = df_filtered[df_filtered["Salesman_Name"].isin(pilih_salesman)]
+
+    auto_jakarta = False
+    if show_matgroup and subj_dim in ("Per Salesman", "Per Customer") and not pilih_cabang:
+        jakarta = [c for c in df_filtered["Cabang"].unique() if "jakarta" in c.lower()]
+        if jakarta:
+            df_filtered = df_filtered[df_filtered["Cabang"].isin(jakarta)]
+            auto_jakarta = True
 
     # ── Search box (cuma Per Customer, setelah semua filter lain) ──
     if subj_dim == "Per Customer":
@@ -245,47 +314,72 @@ def render_pivot_section(df_src, value_col, aggfunc, key_prefix):
             )
             df_filtered = df_filtered[mask]
 
-    pivot = build_pivot(df_filtered, subj_col, time_col, time_order, value_col, aggfunc, sort_mode=SUBJECT_SORT_MODE[subj_dim])
-    pivot.index.name = subj_dim.replace("Per ", "")
+    if auto_jakarta:
+        st.caption("Mode Matgroup aktif — default Cabang JAKARTA. Pilih cabang lain di filter untuk mengubah.")
 
-    # ── Header bulan compact & label customer 2-baris: TIDAK di-rename di index/kolom
-    # asli (bisa collision — dua customer beda bisa ke-truncate jadi nama yang sama,
-    # dan pandas Styler.apply/.map butuh index unik). Dipakai lewat format_index()
-    # yang cuma mengubah TEKS yang ditampilkan, sedangkan index/kolom asli yang
-    # dipakai internal oleh set_properties(subset=...) di bawah tetap unik & utuh. ──
     fmt = lambda x: f"{x:,.0f}".replace(",", ".")
-    styled = pivot.style.format(fmt).set_properties(
-        **{'text-align': 'right', 'font-size': '13px'}
-    ).set_properties(
-        subset=pd.IndexSlice[:, "TOTAL"], **{'font-weight': 'bold', 'background-color': 'rgba(245, 158, 11, 0.08)'}
-    ).set_properties(
-        subset=pd.IndexSlice["TOTAL", :], **TOTAL_ROW_STYLE
-    )
 
-    if time_dim == "Per Bulan":
-        styled = styled.format_index(lambda c: compact_bulan_label(c) if c != "TOTAL" else c, axis=1)
+    if show_matgroup:
+        pivot = _build_matgroup_pivot(df_filtered, subj_col, time_col, time_order, value_col, aggfunc, SUBJECT_SORT_MODE[subj_dim])
+        if pivot.empty:
+            st.info("Tidak ada data.")
+            return
+        pivot.index.names = [subj_dim.replace("Per ", ""), "Matgroup"]
 
-    if subj_dim == "Per Customer":
-        styled = styled.format_index(lambda i: format_customer_display(i) if i != "TOTAL" else i, axis=0)
+        total_css = '; '.join(f'{k}: {v}' for k, v in TOTAL_ROW_STYLE.items())
+        styled = pivot.style.format(fmt).set_properties(
+            **{'text-align': 'right', 'font-size': '13px'}
+        ).set_properties(
+            subset=pd.IndexSlice[:, "TOTAL"],
+            **{'font-weight': 'bold', 'background-color': 'rgba(245, 158, 11, 0.08)'}
+        ).apply(
+            lambda row: [total_css] * len(row) if (isinstance(row.name, tuple) and row.name[0] == "TOTAL") else [''] * len(row),
+            axis=1,
+        )
 
-    row_px = 50 if subj_dim == "Per Customer" else 35
-    height = min(auto_table_height(len(pivot), row_px=row_px), MAX_TABLE_HEIGHT)
-    col_width = SUBJECT_COL_WIDTH.get(subj_dim)
-    column_config = {"_index": st.column_config.Column(width=col_width)} if col_width else None
-    row_height = 50 if subj_dim == "Per Customer" else None
+        if time_dim == "Per Bulan":
+            styled = styled.format_index(lambda c: compact_bulan_label(c) if c != "TOTAL" else c, axis=1)
+        if subj_dim == "Per Customer":
+            styled = styled.format_index(lambda i: format_customer_display(i) if i != "TOTAL" else i, axis=0, level=0)
 
-    st.dataframe(
-        styled, use_container_width=True, height=height,
-        column_config=column_config, row_height=row_height,
-    )
+        row_px = 50 if subj_dim == "Per Customer" else 35
+        height = min(auto_table_height(len(pivot), row_px=row_px), MAX_TABLE_HEIGHT)
+        st.dataframe(styled, use_container_width=True, height=height)
+    else:
+        pivot = build_pivot(df_filtered, subj_col, time_col, time_order, value_col, aggfunc, sort_mode=SUBJECT_SORT_MODE[subj_dim])
+        pivot.index.name = subj_dim.replace("Per ", "")
+
+        styled = pivot.style.format(fmt).set_properties(
+            **{'text-align': 'right', 'font-size': '13px'}
+        ).set_properties(
+            subset=pd.IndexSlice[:, "TOTAL"], **{'font-weight': 'bold', 'background-color': 'rgba(245, 158, 11, 0.08)'}
+        ).set_properties(
+            subset=pd.IndexSlice["TOTAL", :], **TOTAL_ROW_STYLE
+        )
+
+        if time_dim == "Per Bulan":
+            styled = styled.format_index(lambda c: compact_bulan_label(c) if c != "TOTAL" else c, axis=1)
+        if subj_dim == "Per Customer":
+            styled = styled.format_index(lambda i: format_customer_display(i) if i != "TOTAL" else i, axis=0)
+
+        row_px = 50 if subj_dim == "Per Customer" else 35
+        height = min(auto_table_height(len(pivot), row_px=row_px), MAX_TABLE_HEIGHT)
+        col_width = SUBJECT_COL_WIDTH.get(subj_dim)
+        column_config = {"_index": st.column_config.Column(width=col_width)} if col_width else None
+        row_height = 50 if subj_dim == "Per Customer" else None
+
+        st.dataframe(
+            styled, use_container_width=True, height=height,
+            column_config=column_config, row_height=row_height,
+        )
 
 
-tab_lebar, tab_dalam, tab_claim_ui, tab_goodwill_ui, tab_leadtime_ui, tab_fillrate_ui, tab_statusfulfillment_ui, tab_komposisi_ui, tab_substitusi_ui = st.tabs(
-    ["📐 Kelebaran", "📏 Kedalaman", "📤 Claim", "♻️ Goodwill", "⏱️ Lead Time", "🚚 Fill Rate", "📊 Status Fulfillment", "🧬 Komposisi Kategori", "🔁 Substitusi Partnumber"]
+tab_lebar, tab_dalam, tab_claim_ui, tab_goodwill_ui, tab_leadtime_ui, tab_fillrate_ui, tab_statusfulfillment_ui, tab_substitusi_ui = st.tabs(
+    ["📐 Kelebaran", "📏 Kedalaman", "📤 Claim", "♻️ Goodwill", "⏱️ Lead Time", "🚚 Fill Rate", "📊 Status Fulfillment", "🔁 Substitusi Partnumber"]
 )
 
 with tab_lebar:
-    render_pivot_section(df, "Partnumber", "nunique", "kelebaran")
+    render_pivot_section(df, "Partnumber", "nunique", "kelebaran", enable_matgroup=True)
     st.markdown("---")
     st.markdown("### Penjelasan")
     st.markdown(
@@ -294,7 +388,7 @@ with tab_lebar:
     )
 
 with tab_dalam:
-    render_pivot_section(df, "Qty", "sum", "kedalaman")
+    render_pivot_section(df, "Qty", "sum", "kedalaman", enable_matgroup=True)
     st.markdown("---")
     st.markdown("### Penjelasan")
     st.markdown(
@@ -316,9 +410,6 @@ with tab_fillrate_ui:
 
 with tab_statusfulfillment_ui:
     tab_statusfulfillment.render(df_order, df_supply)
-
-with tab_komposisi_ui:
-    tab_komposisi.render(df_supply, df_part_master)
 
 with tab_substitusi_ui:
     tab_substitusi.render(df_supply, df_part_master)
