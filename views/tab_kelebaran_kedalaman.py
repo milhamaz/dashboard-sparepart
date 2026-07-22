@@ -1,46 +1,11 @@
 # ============================================================
-# 🔧 PAGE: OPERASIONAL PARTNUMBER
+# 📐📏 TAB: KELEBARAN & KEDALAMAN (extracted from Operasional Partnumber)
 # ============================================================
 import streamlit as st
 import pandas as pd
-from utils.data_loader import load_and_process_data, compute_data_fingerprint, load_part_master, list_bulan_standar
+from utils.data_loader import list_bulan_standar
 from utils.matgroup_engine import MATGROUP_ORDER
-from utils.styles import inject_styles
-from utils.components import TOTAL_ROW_STYLE, auto_table_height, build_pivot, cleanup_selection, render_nav_bar, render_footer
-
-st.set_page_config(page_title="Operasional Partnumber", page_icon="🔧", layout="wide", initial_sidebar_state="collapsed")
-
-inject_styles()
-
-st.markdown(
-    '<h1 style="color: white; text-align: center; font-size: 24px;">Operasional Partnumber</h1>',
-    unsafe_allow_html=True
-)
-
-render_nav_bar("operasional")
-
-# ── Load Data (cuma butuh df_order) ──
-(df_order, df_supply, df_target, df_tmo_lookup, df_topt_lookup,
- df_chem_lookup, df_tgb_lookup, df_7kp_lookup, df_dprog_lookup, df_kalkerja,
- df_7kp_prefix, _df_customer_master) = load_and_process_data(compute_data_fingerprint())
-
-if df_order is None or df_order.empty:
-    st.warning("Data Order belum siap.")
-    st.stop()
-
-df_part_master = load_part_master(compute_data_fingerprint())
-
-# ── Siapkan kolom dimensi ──
-df = df_order.copy()
-df["Area"] = df["Kode_Area"].astype(str).str.replace("AOM", "Area ", regex=False)
-df["Cabang"] = df["Cabang"].astype(str).str.strip()
-df["Salesman_Name"] = df["Salesman_Name"].astype(str).str.strip().str.upper()
-df["Customer_Name"] = df["Customer_Name"].astype(str).str.strip().str.upper()
-df["Customer_Label"] = df["Customer_No"].astype(str) + " - " + df["Customer_Name"]
-df["Tahun_Label"] = df["Tahun"].astype(int).astype(str)
-df["Kuartal_Num"] = ((df["Bulan_Num"] - 1) // 3) + 1
-df["Kuartal_Label"] = "Q" + df["Kuartal_Num"].astype(str) + " " + df["Tahun_Label"]
-df["Bulan_Label"] = df["Bulan"].astype(str) + " " + df["Tahun_Label"]
+from utils.components import TOTAL_ROW_STYLE, auto_table_height, build_pivot, cleanup_selection
 
 SUBJECT_DIMENSIONS = {
     "Per Area": "Area",
@@ -64,20 +29,37 @@ BULAN_ABBR = {
     "September": "SEP", "Oktober": "OKT", "November": "NOV", "Desember": "DES",
 }
 
-MAX_TABLE_HEIGHT = 600  # dimensi dengan ratusan/ribuan baris (mis. Per Customer) tetap scrollable, bukan makin memanjangkan halaman
+MAX_TABLE_HEIGHT = 600
+
+SUBJECT_SORT_MODE = {
+    "Per Area": "total_desc",
+    "Per Cabang": "alpha",
+    "Per Salesman": "alpha",
+    "Per Customer": "alpha",
+}
 
 
-def compact_bulan_label(label):
-    """'Januari 2025' -> 'JAN'25' — cuma dipakai saat mode Per Bulan supaya header
-    kolom tidak makan banyak ruang horizontal ketika kolomnya banyak (sampai 12+)."""
+def _prepare_order_df(df_order):
+    df = df_order.copy()
+    df["Area"] = df["Kode_Area"].astype(str).str.replace("AOM", "Area ", regex=False)
+    df["Cabang"] = df["Cabang"].astype(str).str.strip()
+    df["Salesman_Name"] = df["Salesman_Name"].astype(str).str.strip().str.upper()
+    df["Customer_Name"] = df["Customer_Name"].astype(str).str.strip().str.upper()
+    df["Customer_Label"] = df["Customer_No"].astype(str) + " - " + df["Customer_Name"]
+    df["Tahun_Label"] = df["Tahun"].astype(int).astype(str)
+    df["Kuartal_Num"] = ((df["Bulan_Num"] - 1) // 3) + 1
+    df["Kuartal_Label"] = "Q" + df["Kuartal_Num"].astype(str) + " " + df["Tahun_Label"]
+    df["Bulan_Label"] = df["Bulan"].astype(str) + " " + df["Tahun_Label"]
+    return df
+
+
+def _compact_bulan_label(label):
     bulan, tahun = label.rsplit(" ", 1)
     abbr = BULAN_ABBR.get(bulan, bulan[:3].upper())
     return f"{abbr}'{tahun[-2:]}"
 
 
-def truncate_customer_name(name):
-    """Nama customer > 17 karakter dipotong jadi max 3 kata: prefix PT/CV + 2 kata
-    berikutnya kalau ada, atau 3 kata pertama kalau tidak ada prefix itu."""
+def _truncate_customer_name(name):
     name = str(name).strip()
     if len(name) <= 17:
         return name.upper()
@@ -92,30 +74,17 @@ def truncate_customer_name(name):
     return result.upper()
 
 
-def format_customer_display(label):
-    """'{No} - {NAMA LENGKAP}' -> 2 baris: '{No} -' lalu nama yang sudah ditruncate.
-    Cuma dipakai untuk tampilan tabel — pencarian (Revisi 5) tetap pakai `label` asli."""
+def _format_customer_display(label):
     no_part, name_part = label.split(" - ", 1)
-    return f"{no_part} -\n{truncate_customer_name(name_part)}"
+    return f"{no_part} -\n{_truncate_customer_name(name_part)}"
 
 
-def get_time_dimension(data, time_dim):
-    """Return (nama_kolom_waktu, urutan_label_kronologis) — bukan alfabetis, supaya
-    'Q2 2024' tidak muncul sebelum 'Q1 2025' seperti kalau di-sort string biasa."""
+def _get_time_dimension(data, time_dim):
     uniq = data[["Tahun_Label", "Tahun"]].drop_duplicates().sort_values("Tahun")
     return "Tahun_Label", uniq["Tahun_Label"].tolist()
 
 
-SUBJECT_SORT_MODE = {
-    "Per Area": "total_desc",
-    "Per Cabang": "alpha",
-    "Per Salesman": "alpha",
-    "Per Customer": "alpha",  # Customer_Label diawali "{Customer_No} - ...", jadi sort alfabetis = sort by Customer_No
-}
-
-
 def _build_matgroup_pivot(data, subj_col, time_col, time_order, value_col, aggfunc, sort_mode):
-    """Pivot dengan Mat_Group sebagai sub-row per subjek."""
     d = data.dropna(subset=[subj_col, time_col, value_col, "Mat_Group"])
     if d.empty:
         return pd.DataFrame()
@@ -161,7 +130,7 @@ def _build_matgroup_pivot(data, subj_col, time_col, time_order, value_col, aggfu
     return pivot
 
 
-def render_pivot_section(df_src, value_col, aggfunc, key_prefix, enable_matgroup=False):
+def _render_pivot_section(df_src, value_col, aggfunc, key_prefix, enable_matgroup=False):
     has_mg = enable_matgroup and "Mat_Group" in df_src.columns
     if has_mg:
         col_dim1, col_dim2, col_mg_mode = st.columns(3)
@@ -169,15 +138,15 @@ def render_pivot_section(df_src, value_col, aggfunc, key_prefix, enable_matgroup
         col_dim1, col_dim2 = st.columns(2)
 
     with col_dim1:
-        time_dim = st.selectbox("🕐 Dimensi Waktu", ["Per Tahun", "Per Kuartal", "Per Bulan"], key=f"waktu_{key_prefix}")
+        time_dim = st.selectbox("Dimensi Waktu", ["Per Tahun", "Per Kuartal", "Per Bulan"], key=f"waktu_{key_prefix}")
     with col_dim2:
-        subj_dim = st.selectbox("🧑‍💼 Dimensi Subjek", list(SUBJECT_DIMENSIONS.keys()), key=f"subjek_{key_prefix}")
+        subj_dim = st.selectbox("Dimensi Subjek", list(SUBJECT_DIMENSIONS.keys()), key=f"subjek_{key_prefix}")
 
     show_matgroup = False
     if has_mg:
         with col_mg_mode:
             mg_mode = st.radio(
-                "📊 Mode Matgroup", ["Tanpa Matgroup", "Dengan Matgroup"],
+                "Mode Matgroup", ["Tanpa Matgroup", "Dengan Matgroup"],
                 index=0, horizontal=True, key=f"mg_mode_{key_prefix}",
             )
             show_matgroup = mg_mode == "Dengan Matgroup"
@@ -196,7 +165,6 @@ def render_pivot_section(df_src, value_col, aggfunc, key_prefix, enable_matgroup
     need_kuartal_pill = time_dim == "Per Bulan"
     need_area_pill = subj_dim != "Per Area"
 
-    # ── BARIS 2 — PILLS ROW: semua pills aktif (Tahun/Kuartal/Area) digabung 1 baris ──
     pills_needed = []
     if need_tahun_pill: pills_needed.append("tahun")
     if need_kuartal_pill: pills_needed.append("kuartal")
@@ -213,7 +181,6 @@ def render_pivot_section(df_src, value_col, aggfunc, key_prefix, enable_matgroup
                 default=str(tahun_terbaru) if tahun_terbaru is not None else None,
                 key=f"tahun_{key_prefix}",
             )
-        # Un-click (None) -> fallback ke tahun terbaru
         pilih_tahun = int(pilih_tahun_raw) if pilih_tahun_raw else tahun_terbaru
         df_filtered = df_src[df_src["Tahun"] == pilih_tahun]
 
@@ -224,23 +191,19 @@ def render_pivot_section(df_src, value_col, aggfunc, key_prefix, enable_matgroup
                 key=f"kuartal_{key_prefix}",
             ) or []
 
-    # ── Tentukan kolom waktu yang ditampilkan ──
     if time_dim == "Per Tahun":
-        time_col, time_order = get_time_dimension(df_filtered, time_dim)
+        time_col, time_order = _get_time_dimension(df_filtered, time_dim)
     elif time_dim == "Per Kuartal":
         time_col = "Kuartal_Label"
         time_order = [f"Q{q} {pilih_tahun}" for q in [1, 2, 3, 4]]
-    else:  # Per Bulan
+    else:
         quarter_nums = sorted(int(q[1]) for q in pilih_kuartal) if pilih_kuartal else [1, 2, 3, 4]
         bulan_tampil = [b for q in quarter_nums for b in QUARTER_MONTHS[q]]
         time_col = "Bulan_Label"
         time_order = [f"{b} {pilih_tahun}" for b in bulan_tampil]
-        if pilih_kuartal:  # cuma filter baris data kalau ada kuartal yang dipilih; default = semua 12 bulan
+        if pilih_kuartal:
             df_filtered = df_filtered[df_filtered["Bulan"].isin(bulan_tampil)]
 
-    # Area pill (cross-filter dulu berdasar Cabang/Salesman yang sudah dipilih SEBELUMNYA —
-    # nilai session_state, bukan widget-nya, karena Cabang/Salesman baru dirender di baris
-    # dropdown SETELAH baris pills ini) sebelum widget-nya dibuat.
     if need_area_pill:
         if subj_dim == "Per Cabang":
             area_options = sorted(df_filtered["Area"].dropna().unique().tolist())
@@ -257,8 +220,6 @@ def render_pivot_section(df_src, value_col, aggfunc, key_prefix, enable_matgroup
         with pill_slot["area"]:
             pilih_area = st.pills("Filter Area", area_options, selection_mode="multi", key=area_key) or []
 
-    # ── BARIS 3 — DROPDOWN ROW: Filter Cabang (Per Salesman/Customer) + Filter Salesman
-    # (Per Customer), cross-filter pakai `pilih_area` yang baru saja di-resolve di atas. ──
     dropdowns_needed = []
     if subj_dim in ("Per Salesman", "Per Customer"): dropdowns_needed.append("cabang")
     if subj_dim == "Per Customer": dropdowns_needed.append("salesman")
@@ -299,7 +260,6 @@ def render_pivot_section(df_src, value_col, aggfunc, key_prefix, enable_matgroup
             df_filtered = df_filtered[df_filtered["Cabang"].isin(jakarta)]
             auto_jakarta = True
 
-    # ── Search box (cuma Per Customer, setelah semua filter lain) ──
     if subj_dim == "Per Customer":
         search_kw = st.text_input(
             "Cari customer", placeholder="Cari customer...",
@@ -337,9 +297,9 @@ def render_pivot_section(df_src, value_col, aggfunc, key_prefix, enable_matgroup
         )
 
         if time_dim == "Per Bulan":
-            styled = styled.format_index(lambda c: compact_bulan_label(c) if c != "TOTAL" else c, axis=1)
+            styled = styled.format_index(lambda c: _compact_bulan_label(c) if c != "TOTAL" else c, axis=1)
         if subj_dim == "Per Customer":
-            styled = styled.format_index(lambda i: format_customer_display(i) if i != "TOTAL" else i, axis=0, level=0)
+            styled = styled.format_index(lambda i: _format_customer_display(i) if i != "TOTAL" else i, axis=0, level=0)
 
         row_px = 50 if subj_dim == "Per Customer" else 35
         height = min(auto_table_height(len(pivot), row_px=row_px), MAX_TABLE_HEIGHT)
@@ -357,9 +317,9 @@ def render_pivot_section(df_src, value_col, aggfunc, key_prefix, enable_matgroup
         )
 
         if time_dim == "Per Bulan":
-            styled = styled.format_index(lambda c: compact_bulan_label(c) if c != "TOTAL" else c, axis=1)
+            styled = styled.format_index(lambda c: _compact_bulan_label(c) if c != "TOTAL" else c, axis=1)
         if subj_dim == "Per Customer":
-            styled = styled.format_index(lambda i: format_customer_display(i) if i != "TOTAL" else i, axis=0)
+            styled = styled.format_index(lambda i: _format_customer_display(i) if i != "TOTAL" else i, axis=0)
 
         row_px = 50 if subj_dim == "Per Customer" else 35
         height = min(auto_table_height(len(pivot), row_px=row_px), MAX_TABLE_HEIGHT)
@@ -373,12 +333,9 @@ def render_pivot_section(df_src, value_col, aggfunc, key_prefix, enable_matgroup
         )
 
 
-tab_lebar, tab_dalam = st.tabs(
-    ["📐 Kelebaran", "📏 Kedalaman"]
-)
-
-with tab_lebar:
-    render_pivot_section(df, "Partnumber", "nunique", "kelebaran", enable_matgroup=True)
+def render_kelebaran(df_order):
+    df = _prepare_order_df(df_order)
+    _render_pivot_section(df, "Partnumber", "nunique", "kelebaran", enable_matgroup=True)
     st.markdown("---")
     st.markdown("### Penjelasan")
     st.markdown(
@@ -386,14 +343,13 @@ with tab_lebar:
         "- Baris dan kolom **TOTAL** tidak diperoleh dari menjumlahkan angka-angka di atasnya, melainkan dihitung ulang langsung dari data gabungan. Hal ini dilakukan agar Partnumber yang sama tidak terhitung berulang kali apabila muncul di lebih dari satu Area, Cabang, Salesman, Customer, atau periode."
     )
 
-with tab_dalam:
-    render_pivot_section(df, "Qty", "sum", "kedalaman", enable_matgroup=True)
+
+def render_kedalaman(df_order):
+    df = _prepare_order_df(df_order)
+    _render_pivot_section(df, "Qty", "sum", "kedalaman", enable_matgroup=True)
     st.markdown("---")
     st.markdown("### Penjelasan")
     st.markdown(
         "- **Kedalaman** menunjukkan total quantity (Qty) yang dipesan, yaitu penjumlahan seluruh unit barang yang dibeli tanpa memperhatikan keberagaman jenis Partnumber-nya. Metrik ini menggambarkan **volume pembelian** — semakin besar nilainya, semakin banyak unit barang yang dibeli oleh subjek tersebut, meskipun jenis Partnumber-nya bisa saja terbatas.\n"
         "- **Kelebaran** dan **Kedalaman** sebaiknya dibaca berdampingan: subjek dengan Kelebaran tinggi namun Kedalaman rendah cenderung membeli banyak jenis produk dalam jumlah kecil-kecil, sedangkan subjek dengan Kelebaran rendah namun Kedalaman tinggi cenderung membeli sedikit jenis produk namun dalam jumlah besar."
     )
-
-
-render_footer()

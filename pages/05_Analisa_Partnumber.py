@@ -1,22 +1,23 @@
 # ============================================================
-# 📊 PAGE: ANALISA PRODUK
+# 📊 PAGE: ANALISA PARTNUMBER (merged from Analisa Produk + Operasional Partnumber)
 # ============================================================
 import streamlit as st
 from utils.data_loader import load_and_process_data, compute_data_fingerprint, load_part_master
 from utils.styles import inject_styles
 from utils.components import render_nav_bar, render_footer
 from views import tab_komposisi, tab_profitabilitas, tab_moving
+from views.tab_kelebaran_kedalaman import render_kelebaran, render_kedalaman
 
-st.set_page_config(page_title="Analisa Produk", page_icon="📊", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Analisa Partnumber", page_icon="📊", layout="wide", initial_sidebar_state="collapsed")
 
 inject_styles()
 
 st.markdown(
-    '<h1 style="color: white; text-align: center; font-size: 24px;">Analisa Produk</h1>',
+    '<h1 style="color: white; text-align: center; font-size: 24px;">Analisa Partnumber</h1>',
     unsafe_allow_html=True
 )
 
-render_nav_bar("produk")
+render_nav_bar("partnumber")
 
 # ── Load Data ──
 (df_order, df_supply, df_target, df_tmo_lookup, df_topt_lookup,
@@ -30,8 +31,8 @@ if df_supply is None or df_supply.empty:
     st.stop()
 
 # ── Tabs ──
-tab_komposisi_ui, tab_profit_ui, tab_moving_ui = st.tabs(
-    ["🧬 Komposisi Kategori", "💰 Profitabilitas", "📦 Moving Analysis"]
+tab_komposisi_ui, tab_profit_ui, tab_moving_ui, tab_lebar_ui, tab_dalam_ui = st.tabs(
+    ["🧬 Komposisi Kategori", "💰 Profitabilitas", "📦 Moving Analysis", "📐 Kelebaran", "📏 Kedalaman"]
 )
 
 with tab_komposisi_ui:
@@ -42,5 +43,11 @@ with tab_profit_ui:
 
 with tab_moving_ui:
     tab_moving.render(df_supply)
+
+with tab_lebar_ui:
+    render_kelebaran(df_order)
+
+with tab_dalam_ui:
+    render_kedalaman(df_order)
 
 render_footer()

@@ -14,8 +14,7 @@ PAGE_REGISTRY = [
     ("sdm", "👥 SDM", "pages/02_SDM.py"),
     ("customer", "🤝 Customer", "pages/03_Customer.py"),
     ("marketing", "📢 Marketing Program", "pages/04_Marketing_Program.py"),
-    ("operasional", "🔧 Operasional Partnumber", "pages/05_Operasional_Partnumber.py"),
-    ("produk", "📊 Analisa Produk", "pages/06_Analisa_Produk.py"),
+    ("partnumber", "📊 Analisa Partnumber", "pages/05_Analisa_Partnumber.py"),
 ]
 
 

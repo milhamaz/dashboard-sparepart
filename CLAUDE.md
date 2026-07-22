@@ -32,8 +32,7 @@ pages/
   03_Customer.py              # Customer Target, Retention & Churn, Alert, Cross-sell Gap,
                               #   Diversifikasi, Suggested Status
   04_Marketing_Program.py     # 7KP, Item D (DProg), Gebyur, Kombo Servis
-  05_Operasional_Partnumber.py# Kelebaran, Kedalaman
-  06_Analisa_Produk.py        # Komposisi Kategori, Profitabilitas, Moving Analysis
+  05_Analisa_Partnumber.py    # Komposisi Kategori, Profitabilitas, Moving Analysis, Kelebaran, Kedalaman
 views/
   tab_*.py                    # Satu file = satu tab, export fungsi render()
 utils/

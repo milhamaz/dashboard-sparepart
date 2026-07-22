@@ -54,7 +54,6 @@ with col3:
     ### Customer
     Performa eksternal — kesehatan basis customer:
     - **Target Customer** — Achievement customer vs target
-    - **ODOM** — Kestabilan order harian (One Million One Day)
     - **Retention & Churn** — Customer bertahan/hilang/baru YoY
     - **Alert Penurunan** — Customer aktif dengan penurunan signifikan
     - **Cross-sell Gap** — Kategori lazim di peer yang belum digarap per customer
@@ -73,8 +72,8 @@ with b3:
     if st.button("Buka Customer", use_container_width=True):
         st.switch_page("pages/03_Customer.py")
 
-# ── Row 2: Marketing · Operasional Partnumber · Analisa Produk
-col4, col5, col6 = st.columns(3)
+# ── Row 2: Marketing · Analisa Partnumber ─────────────────────
+col4, col5 = st.columns(2)
 
 with col4:
     st.markdown("""
@@ -87,36 +86,21 @@ with col4:
 
 with col5:
     st.markdown("""
-    ### Operasional Partnumber
-    Operasional & service-level per Partnumber:
-    - **Kelebaran** — Unique Partnumber yang di-order
-    - **Kedalaman** — Total Qty yang di-order
-    - **Claim** — Barang retur reject
-    - **Goodwill** — Barang retur reject layak jual
-    - **Lead Time** — Durasi Order sampai Actual keluar gudang
-    - **Fill Rate** — Kelengkapan Qty per pengiriman
-    - **Status Fulfillment** — Status akhir tiap Order (akumulatif)
-    - **Substitusi** — Migrasi volume kode lama → kode baru & kesehatannya
-    """)
-
-with col6:
-    st.markdown("""
-    ### Analisa Produk
-    Analisis strategis produk berdasarkan kategori (Mat Group):
+    ### Analisa Partnumber
+    Analisis strategis produk & operasional per Partnumber:
     - **Komposisi Kategori** — Sebaran & growth revenue per kategori produk
     - **Profitabilitas** — Radar stat, waterfall kontribusi, & bubble chart per kategori
     - **Moving Analysis** — Klasifikasi VFM/FM/Medium/SM/VSM/Dead & treemap revenue
+    - **Kelebaran** — Unique Partnumber yang di-order
+    - **Kedalaman** — Total Qty yang di-order
     """)
 
-b4, b5, b6 = st.columns(3)
+b4, b5 = st.columns(2)
 with b4:
     if st.button("Buka Marketing Program", use_container_width=True):
         st.switch_page("pages/04_Marketing_Program.py")
 with b5:
-    if st.button("Buka Operasional Partnumber", use_container_width=True):
-        st.switch_page("pages/05_Operasional_Partnumber.py")
-with b6:
-    if st.button("Buka Analisa Produk", use_container_width=True):
-        st.switch_page("pages/06_Analisa_Produk.py")
+    if st.button("Buka Analisa Partnumber", use_container_width=True):
+        st.switch_page("pages/05_Analisa_Partnumber.py")
 
 render_footer()
